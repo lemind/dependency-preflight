@@ -1,0 +1,23 @@
+name: "dependency-preflight"
+description: "Pre-deploy npm dependency assessment: malicious and vulnerable locked versions, outdated key packages, one verdict"
+branding:
+  icon: "shield"
+  color: "blue"
+inputs:
+  path:
+    description: "Directory to assess, relative to the workspace"
+    default: "."
+  fail-on:
+    description: "Lowest verdict that fails the step: blocked or review. Failed coverage always fails."
+    default: "blocked"
+  key-packages:
+    description: "Comma-separated key package patterns, listed first and checked for outdated releases"
+    default: "@solana/*,@coral-xyz/anchor"
+outputs:
+  verdict:
+    description: "blocked, review or ready"
+  coverage:
+    description: "complete, partial or failed"
+runs:
+  using: "node24"
+  main: "dist/index.cjs"
