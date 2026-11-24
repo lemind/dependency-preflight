@@ -127,26 +127,31 @@ with evidence and a re-check). Not a security audit or a deployment guarantee.
 **External services:**
 - **OSV** (free): `/v1/querybatch` returns only advisory ids (handle its pagination); `/v1/vulns/{id}` gives severity,
   affected ranges and fixed versions. **Malicious** = the id or any alias starts with `MAL-`, classified separately
-  from vulnerabilities. Aliases (e.g. `GHSA-jcxm-7wvp-g6p5` and `MAL-2024-11183`) are grouped as one issue.
+  from vulnerabilities. Records that alias each other are grouped, and each locked version is one finding listing its
+  groups: `@solana/web3.js` 1.95.6 is one finding citing `MAL-2024-11183` (alias `GHSA-2mhj-xmf4-pr8m`) and
+  `GHSA-jcxm-7wvp-g6p5` (alias `CVE-2024-54134`), which OSV does not list as aliases of each other.
 - **npm registry** (latest versions): free.
 - **Telegraph** (`POST /engine/v1/ask/7314`, escrow): paid.
 
 **Structure:**
 
 ```text
-action.yml               inputs: wallet secret (optional), miner id, caps, fail-on, key packages
+action.yml               inputs: path, fail-on, key packages, case label (P2 adds wallet, miner id, caps)
 src/
   lockfiles.ts           find every lockfile; parse npm/pnpm/yarn/bun; every workspace member; direct vs transitive, runtime vs dev
   osv.ts                 batch query + advisory details (severity, fixed in, malicious)
   registry.ts            latest stable versions; removed versions; generous timeout for huge records
   verdict.ts             rank findings, apply the verdict rules, "not checked" handling
+  assess.ts              free assessment of a checkout: discovery, OSV, registry, verdict
   explain.ts             pick upgrades worth explaining, reuse saved answers, buy from the miner, validate
   telegraph.ts           escrow payment client (copied from the PR Agent), price and run caps
   record.ts              purchases and explanations on the `preflight` branch
   compare.ts             base vs head findings: resolved, open, new
   report.ts              one markdown report: verdict, rules, findings, explanations, receipts, not assessed
   action.ts              entry point: job summary, PR comment (create or update), exit code
-test/fixtures/           wallet-adapter pnpm-lock, anchor ts/yarn.lock, drift sdk/yarn.lock, compromised fixture
+test/fixtures/real/      wallet-adapter, anchor ts/, drift sdk/: lockfiles and manifests pinned by commit and sha256, recorded OSV answers
+test/fixtures/controlled/ web3.js 1.95.6 / 1.95.7 / 1.95.8, malformed, Yarn Berry, Bun
+scripts/                 fetch-fixture.sh (pin a repo's dependency files), record-osv.ts (record OSV answers)
 dist/index.cjs           bundled Action
 ```
 
@@ -183,21 +188,25 @@ commit and record the resolved target (e.g. Anchor 0.29.0 → whatever is latest
 ⚠ = needs explicit approval (spends testnet funds, public post, or new dependencies). Day targets are guides.
 
 ### Phase 0: setup (25 Nov)
-- [ ] T001 ⚠ Approve dependencies; `package.json`, `tsconfig.json`, vitest, esbuild bundle script, `action.yml` skeleton
-- [ ] T002 Save fixtures, pinned: for each target repo the commit SHA, lockfile path and sha256, workspace manifests and config, retrieval date; plus recorded OSV responses with capture time, so offline tests don't drift with the live database
-- [ ] T003 Write controlled fixtures, labelled historical where relevant: npm `package-lock.json` v3 with `@solana/web3.js` 1.95.6; the same with 1.95.7; the same with 1.95.8 (clean); a malformed lockfile; a Yarn Berry or Bun lockfile (must come out "not assessed")
-- [ ] T004 CI: tests and a bundle-is-up-to-date check on every push and PR
+- [x] T001 ⚠ Approve dependencies; `package.json`, `tsconfig.json`, vitest, esbuild bundle script, `action.yml` skeleton
+- [x] T002 Save fixtures, pinned: for each target repo the commit SHA, lockfile path and sha256, workspace manifests and config, retrieval date; plus recorded OSV responses with capture time, so offline tests don't drift with the live database
+- [x] T003 Write controlled fixtures, labelled historical where relevant: npm `package-lock.json` v3 with `@solana/web3.js` 1.95.6; the same with 1.95.7; the same with 1.95.8 (clean); a malformed lockfile; a Yarn Berry or Bun lockfile (must come out "not assessed")
+- [x] T004 CI: tests and a bundle-is-up-to-date check on every push and PR
 
 ### Phase 1: P1, verdict in CI (25–26 Nov)
-- [ ] T010 `lockfiles.ts`: find all npm/pnpm/yarn/bun lockfiles; list non-npm files (Cargo.lock) as not assessed
-- [ ] T011 `lockfiles.ts`: every workspace member and nested package; direct vs transitive, runtime vs dev
-- [ ] T012 `osv.ts`: batch query with pagination; full advisory records (severity, ranges, fixed versions); malicious = `MAL-` id or alias; alias grouping; "not checked" on failure
-- [ ] T013 `registry.ts`: latest stable per direct dependency; removed versions; long timeout for big records
-- [ ] T014 `verdict.ts`: ranking (malicious > direct runtime > transitive runtime > dev; key packages first), verdict rules, coverage status (complete / partial / failed)
-- [ ] T015 `report.ts`: markdown report (verdict and rules, findings with file and member, fixed-in version, historical label, not assessed)
-- [ ] T016 `action.ts`: job summary, exit code (fail on blocked; `fail-on: review` option)
-- [ ] T017 Tests, offline: 1.95.6 and 1.95.7 blocked, 1.95.8 with no malware finding; the three pinned real lockfiles parse, with counts matching the recorded OSV fixtures; malformed lockfile and OSV outage give partial or failed coverage, never an empty clean report; unsupported lockfiles are listed
-- [ ] T018 Free-mode runs on wallet-adapter, anchor `ts/` and drift `sdk/`; report coverage and elapsed time; each under 5 min (SC-001)
+- [x] T010 `lockfiles.ts`: find all npm/pnpm/yarn/bun lockfiles; list non-npm files (Cargo.lock) as not assessed
+- [x] T011 `lockfiles.ts`: every workspace member and nested package; direct vs transitive, runtime vs dev
+- [x] T012 `osv.ts`: batch query with pagination; full advisory records (severity, ranges, fixed versions); malicious = `MAL-` id or alias; alias grouping; "not checked" on failure
+- [x] T013 `registry.ts`: latest stable per direct dependency; removed versions; long timeout for big records
+- [x] T014 `verdict.ts`: ranking (malicious > direct runtime > transitive runtime > dev; key packages first), verdict rules, coverage status (complete / partial / failed)
+- [x] T015 `report.ts`: markdown report (verdict and rules, findings with file and member, fixed-in version, historical label, not assessed)
+- [x] T016 `action.ts`: job summary, exit code (fail on blocked; `fail-on: review` option)
+- [x] T017 Tests, offline: 1.95.6 and 1.95.7 blocked, 1.95.8 with no malware finding; the three pinned real lockfiles parse, with counts matching the recorded OSV fixtures; malformed lockfile and OSV outage give partial or failed coverage, never an empty clean report; unsupported lockfiles are listed
+- [x] T018 Free-mode runs on wallet-adapter, anchor `ts/` and drift `sdk/`; report coverage and elapsed time; each under 5 min (SC-001)
+  - Run locally on 24 Nov with the bundled Action against shallow checkouts at the fixture commits (not yet on a hosted
+    runner): wallet-adapter blocked, complete, 18 s; anchor `ts/` review, complete, 6.5 s; drift `sdk/` blocked,
+    partial (`sdk/bun.lock`), 8.4 s. Whole repositories: anchor blocked, partial (Rust, Bun), 13 s; drift blocked,
+    partial (Rust, Bun, Yarn Berry), 14 s.
 
 ### Phase 2: P2, paid explanations (27 Nov)
 - [ ] T020 `telegraph.ts`: copy the escrow client; per-call and per-run caps; no wallet means free mode
@@ -249,3 +258,17 @@ An external review of this plan found five gaps before implementation. All accep
 
 Also: the miner fix is off the critical path (Anchor already works); the paid test runs from the Action, not a
 script; outside reproduction moved earlier.
+
+## 8. Implementation decisions (24 Nov)
+
+- **npm aliases and overrides are assessed under the real package** (FR-001a updated). Identity comes from the
+  manifest, the lockfile descriptor and the registry tarball URL, never the install directory or the package's own
+  `package.json`; disagreement means "not assessed". Examples: drift `sdk/` `@coral-xyz/anchor-30` is
+  `@coral-xyz/anchor` 0.30.1; anchor `ts/` `@anchor-lang/solana-web3-v3` is `@solana/web3.js` 3.0.0; wallet-adapter's
+  `@types/web` override is `typescript` 5.8.3 (a runtime dependency there, as a resolved peer of `@solana/codecs-*`).
+- Lock entries no workspace member reaches (e.g. kept by `resolutions`) are still checked, shown as unattributed and
+  counted as runtime.
+- `@solana/web3.js` latest is 3.2.1, so any 1.x lock is an outdated key package (review). The remediation demo moves
+  from blocked to **review**, and the clean demo needs web3.js 3.x or `@solana/kit`.
+- Full reports are 30–80 KB; GitHub comments are capped at 65,536 characters, so T031 needs a condensed comment
+  that links the job summary.
