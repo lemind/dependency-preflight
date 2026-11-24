@@ -13,6 +13,8 @@ inputs:
   key-packages:
     description: "Comma-separated key package patterns, listed first and checked for outdated releases"
     default: "@solana/*,@coral-xyz/anchor"
+  case-label:
+    description: "Optional label shown at the top of the report, e.g. for a historical or controlled test case"
 outputs:
   verdict:
     description: "blocked, review or ready"
