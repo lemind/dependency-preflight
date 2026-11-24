@@ -27,7 +27,7 @@ const run = async () => {
     : DEFAULT_KEY_PACKAGES;
   const { root, path } = resolveTarget(workspace, core.getInput("path"));
 
-  const assessment = await assess(root, keyPackages, fetch);
+  const assessment = await assess(root, keyPackages, fetch, path);
   const report = renderReport(assessment, {
     path,
     repository: process.env.GITHUB_REPOSITORY,

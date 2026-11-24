@@ -221,3 +221,15 @@ describe("aliases and package identity", () => {
     expect(tarballIdentity("https://codeload.github.com/a/b/tar.gz/abc")).toBeUndefined();
   });
 });
+
+describe("assessing a subdirectory", () => {
+  it("reports paths and members relative to the repository", () => {
+    const discovery = discover(join(FIXTURES, "real/drift-sdk/files/sdk"), "sdk");
+    const report = assessed(discovery.lockfiles[0]);
+    expect([report.path, report.members]).toEqual(["sdk/yarn.lock", ["sdk"]]);
+    expect(find(report.packages, "@coral-xyz/anchor", "0.29.0")[0]).toMatchObject({
+      lockfile: "sdk/yarn.lock",
+      usages: [{ member: "sdk", direct: true, runtime: true }],
+    });
+  });
+});

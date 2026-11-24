@@ -624,8 +624,35 @@ const assessLockfile = (root: string, path: string, tree: Tree): LockfileReport 
   }
 };
 
-/** Finds and parses every dependency file under root (a checkout); reads files only, runs nothing. */
-export const discover = (root: string): Discovery => {
+/** Re-bases every reported path from the assessed directory onto the repository, e.g. "yarn.lock" -> "sdk/yarn.lock". */
+const rebase = (discovery: Discovery, base: string): Discovery => {
+  if (base === "." || !base) return discovery;
+  const path = (relativePath: string) => repoPath(base, relativePath === "." ? "" : relativePath);
+  const usages = (list: Usage[]) => list.map((usage) => ({ ...usage, member: path(usage.member) }));
+  return {
+    lockfiles: discovery.lockfiles.map((report) =>
+      report.status === "assessed"
+        ? {
+            ...report,
+            path: path(report.path),
+            members: report.members.map(path),
+            packages: report.packages.map((locked) => ({ ...locked, lockfile: path(locked.lockfile), usages: usages(locked.usages) })),
+            notAssessed: report.notAssessed.map((item) => ({ ...item, lockfile: path(item.lockfile), usages: usages(item.usages) })),
+          }
+        : { ...report, path: path(report.path) },
+    ),
+    otherDependencyFiles: discovery.otherDependencyFiles.map((file) => ({ ...file, path: path(file.path) })),
+    manifestsWithoutLockfile: discovery.manifestsWithoutLockfile.map(path),
+  };
+};
+
+/**
+ * Finds and parses every dependency file under root (a checkout, or a directory in one); reads files only, runs
+ * nothing. Reported paths are prefixed with base, the directory's path in the repository.
+ */
+export const discover = (root: string, base = "."): Discovery => rebase(discoverIn(root), base);
+
+const discoverIn = (root: string): Discovery => {
   const files = walk(root);
   const fileSet = new Set(files);
   const tree: Tree = { files, fileSet, manifests: new Map() };

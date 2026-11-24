@@ -75,7 +75,7 @@ export const rankAdvisories = (findings: AdvisoryFinding[]): AdvisoryFinding[] =
       a.package.lockfile.localeCompare(b.package.lockfile),
   );
 
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+const plural = (count: number, word: string, plural = `${word}s`) => `${count} ${count === 1 ? word : plural}`;
 
 /** Applies the verdict rules (FR-004, FR-017) and the coverage rules (FR-004a) to the collected results. */
 export const decide = (
@@ -163,7 +163,7 @@ export const decide = (
   );
   if (severeDirect.length)
     blockedReasons.push(
-      `high or critical advisory in ${plural(severeDirect.length, "direct runtime dependency")}: ${severeDirect.map((finding) => packageKey(finding.package)).join(", ")}`,
+      `high or critical advisory in ${plural(severeDirect.length, "direct runtime dependency", "direct runtime dependencies")}: ${severeDirect.map((finding) => packageKey(finding.package)).join(", ")}`,
     );
   const reviewReasons: string[] = [];
   const otherRuntime = advisories.filter(
@@ -171,7 +171,7 @@ export const decide = (
   );
   if (otherRuntime.length) reviewReasons.push(`advisories in ${plural(otherRuntime.length, "runtime dependency version")}`);
   const uncheckedRuntime = notChecked.filter((item) => item.runtime);
-  if (uncheckedRuntime.length) reviewReasons.push(`${plural(uncheckedRuntime.length, "runtime dependency")} could not be checked`);
+  if (uncheckedRuntime.length) reviewReasons.push(`${plural(uncheckedRuntime.length, "runtime dependency", "runtime dependencies")} could not be checked`);
   const outdatedKey = outdated.filter((finding) => finding.key && finding.gap === "major");
   if (outdatedKey.length)
     reviewReasons.push(
@@ -191,13 +191,13 @@ export const decide = (
     if (report.status !== "assessed") coverageReasons.push(`${report.path}: ${report.status === "failed" ? "failed, " : ""}${report.reason}`);
   for (const file of discovery.otherDependencyFiles) coverageReasons.push(`${file.path}: ${file.ecosystem} dependencies are not assessed`);
   if (discovery.manifestsWithoutLockfile.length)
-    coverageReasons.push(`${plural(discovery.manifestsWithoutLockfile.length, "package.json")} without a lockfile: versions could not be pinned`);
+    coverageReasons.push(`${plural(discovery.manifestsWithoutLockfile.length, "package.json", "package.json files")} without a lockfile: versions could not be pinned`);
   const lookupFailures = notChecked.filter((item) => item.version !== undefined).length;
   if (lookupFailures) coverageReasons.push(`${plural(lookupFailures, "package version")} not checked against advisories`);
-  if (unassessable.length) coverageReasons.push(`${plural(unassessable.length, "dependency")} not assessed (Git, local path or unverifiable source)`);
+  if (unassessable.length) coverageReasons.push(`${plural(unassessable.length, "dependency", "dependencies")} not assessed (Git, local path or unverifiable source)`);
   if (advisoryCheck.detailsMissing.length)
     coverageReasons.push(`${plural(advisoryCheck.detailsMissing.length, "advisory record")} could not be retrieved in full`);
-  if (registryFailures.length) coverageReasons.push(`latest version unknown for ${plural(registryFailures.length, "direct dependency")}`);
+  if (registryFailures.length) coverageReasons.push(`latest version unknown for ${plural(registryFailures.length, "direct dependency", "direct dependencies")}`);
   const coverage: Coverage = coverageFailed ? "failed" : coverageReasons.length ? "partial" : "complete";
 
   return {
