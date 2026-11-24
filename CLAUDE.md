@@ -6,4 +6,4 @@ This repository uses spec-kit: `.specify/` at the repository root is the spec-ki
 
 ## Start here
 
-Context, spec summary, plan and tasks: [PROJECT.md](PROJECT.md).
+Context, spec summary, plan and tasks: [PROJECT.md](PROJECT.md). Latest session handoff: [docs/HANDOFF.md](docs/HANDOFF.md).
