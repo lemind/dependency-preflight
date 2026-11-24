@@ -7,3 +7,7 @@ This repository uses spec-kit: `.specify/` at the repository root is the spec-ki
 ## Start here
 
 Context, spec summary, plan and tasks: [PROJECT.md](PROJECT.md). Latest session handoff: [docs/HANDOFF.md](docs/HANDOFF.md).
+
+<!-- SPECKIT START -->
+Current plan: [specs/001-dependency-preflight/plan.md](specs/001-dependency-preflight/plan.md)
+<!-- SPECKIT END -->
