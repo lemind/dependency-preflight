@@ -105,6 +105,8 @@ with evidence and a re-check). Not a security audit or a deployment guarantee.
 
 ## 4. Plan
 
+> The authoritative plan is [specs/001-dependency-preflight/plan.md](specs/001-dependency-preflight/plan.md) (with research, data model and the Action contract). This section is the original summary.
+
 **Stack:**
 - TypeScript, Node 24, packaged as a GitHub Action (one bundled file, like the PR Agent).
 - vitest for offline tests with recorded fixtures: the three real lockfiles plus a controlled compromised fixture.
@@ -184,6 +186,8 @@ works, so this only matters if the demo needs a web3.js explanation.
 commit and record the resolved target (e.g. Anchor 0.29.0 → whatever is latest on the run date).
 
 ## 5. Tasks
+
+> The authoritative task list is [specs/001-dependency-preflight/tasks.md](specs/001-dependency-preflight/tasks.md); it adds T019, T027, T033, T046 and T047. This list is kept for history and is not updated.
 
 ⚠ = needs explicit approval (spends testnet funds, public post, or new dependencies). Day targets are guides.
 
