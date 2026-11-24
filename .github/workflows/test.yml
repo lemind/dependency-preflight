@@ -1,0 +1,46 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies from the lockfile
+        run: npm ci --ignore-scripts
+
+      - name: Typecheck and build the packaged action
+        run: npm run build
+
+      - name: Check packaged action matches its source
+        run: git diff --exit-code -- dist/index.cjs
+
+      # Runs the bundle the way the runner does. With no environment it must reach its first check;
+      # a module-format error (e.g. CommonJS loaded as ESM) fails here instead.
+      - name: Smoke-run the packaged action
+        run: |
+          out=$(env -i PATH="$PATH" node dist/index.cjs 2>&1 || true)
+          if ! printf '%s' "$out" | grep -q "::error::GITHUB_WORKSPACE is required"; then
+            printf '%s\n' "$out" | cut -c1-300 | tail -20
+            echo "The packaged action did not start"
+            exit 1
+          fi
+
+      - name: Run tests (recorded fixtures, no network)
+        run: npm test
