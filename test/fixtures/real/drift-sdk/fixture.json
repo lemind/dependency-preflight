@@ -1,0 +1,23 @@
+{
+  "repository": "drift-labs/protocol-v2",
+  "commit": "13e8e9b8d614f3b62e3a65a8c372c819e6529aeb",
+  "retrieved": "2026-11-24T18:38:05Z",
+  "selection": "^sdk/(yarn\\.lock|package\\.json)$",
+  "files": [
+    {
+      "path": "sdk/package.json",
+      "sha256": "04faf2a629462996632bf63bc7d3e71afca66309746ca794253293bf02887ec7"
+    },
+    {
+      "path": "sdk/yarn.lock",
+      "sha256": "d3c2e99fcd174c648a59e6ca06ee0e42a3df13289deff3f02ffc8fd09fd40f03"
+    }
+  ],
+  "dependencyFilesAtCommit": [
+    "Cargo.lock",
+    "bun.lock",
+    "sdk/bun.lock",
+    "sdk/yarn.lock",
+    "yarn.lock"
+  ]
+}
