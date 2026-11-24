@@ -27,6 +27,7 @@ const TIER_HEADING: Record<Tier, string> = {
   "direct-runtime": "Advisories in direct runtime dependencies",
   "transitive-runtime": "Advisories in transitive runtime dependencies",
   dev: "Advisories in development-only dependencies",
+  unreachable: "Advisories in lock entries no workspace member reaches",
 };
 
 /** Escapes text from lockfiles and advisories for a Markdown table cell. */
@@ -60,7 +61,7 @@ const packageName = (finding: { package: LockedPackage; key: boolean }): string 
 const advisoryRow = (finding: AdvisoryFinding): string => {
   const notes: string[] = [];
   if (finding.removedFromRegistry) notes.push("version removed from the npm registry");
-  return `| ${packageName(finding)} | ${code(finding.package.version)} | ${where(finding.package, finding.tier !== "dev")} | ${finding.groups.map(describeGroup).join("<br>")} | ${finding.fixedIn ? code(finding.fixedIn) : "no fixed version listed"} | ${notes.join("; ") || ""} |`;
+  return `| ${packageName(finding)} | ${code(finding.package.version)} | ${where(finding.package, finding.tier !== "dev" && finding.tier !== "unreachable")} | ${finding.groups.map(describeGroup).join("<br>")} | ${finding.fixedIn ? code(finding.fixedIn) : "no fixed version listed"} | ${notes.join("; ") || ""} |`;
 };
 
 const advisoryTable = (findings: AdvisoryFinding[]): string[] => [
@@ -128,6 +129,18 @@ export const renderReport = (assessment: Assessment, context: ReportContext): st
       "</details>",
       "",
     );
+  const unreachableFindings = assessment.advisories.filter((finding) => finding.tier === "unreachable");
+  if (unreachableFindings.length)
+    lines.push(
+      `<details><summary>${TIER_HEADING.unreachable} (${unreachableFindings.length}): listed, not part of the verdict</summary>`,
+      "",
+      "Locked, but no dependency path from a workspace member leads to them (e.g. entries kept by `resolutions`).",
+      "",
+      ...advisoryTable(unreachableFindings),
+      "",
+      "</details>",
+      "",
+    );
   if (outdatedOther.length)
     lines.push(
       `<details><summary>Other direct dependencies with a newer major or minor release (${outdatedOther.length})</summary>`,
@@ -149,7 +162,7 @@ export const renderReport = (assessment: Assessment, context: ReportContext): st
     lines.push(`<details><summary>Not checked or not assessed (${notAssessedFiles.length + assessment.notChecked.length})</summary>`, "");
     for (const line of notAssessedFiles.slice(0, MAX_ROWS)) lines.push(`- ${line}`);
     for (const item of assessment.notChecked.slice(0, MAX_ROWS))
-      lines.push(`- ${code(item.version ? `${item.name}@${item.version}` : item.name)} in ${code(item.lockfile)} (${item.runtime ? "runtime" : "dev"}): ${cell(item.reason)}`);
+      lines.push(`- ${code(item.version ? `${item.name}@${item.version}` : item.name)} in ${code(item.lockfile)} (${item.unreachable ? "unreachable" : item.runtime ? "runtime" : "dev"}): ${cell(item.reason)}`);
     const hidden = Math.max(0, notAssessedFiles.length - MAX_ROWS) + Math.max(0, assessment.notChecked.length - MAX_ROWS);
     if (hidden) lines.push(`- … ${hidden} more`);
     lines.push("", "</details>", "");
@@ -158,8 +171,8 @@ export const renderReport = (assessment: Assessment, context: ReportContext): st
   lines.push(
     "<details><summary>Verdict rules</summary>",
     "",
-    "- **blocked**: any locked version known to be malicious (an OSV `MAL-` record), or a high or critical advisory in a direct runtime dependency.",
-    "- **review**: other advisories in runtime dependencies, a runtime dependency that could not be checked, or an outdated key package (a newer major release, or a newer minor release on 0.x).",
+    "- **blocked**: any locked version known to be malicious (an OSV `MAL-` record), even one no workspace member reaches, or a high or critical advisory in a direct runtime dependency.",
+    "- **review**: other advisories in runtime dependencies, a runtime dependency that could not be checked, or an outdated key package (a newer major release, or a newer minor release on 0.x). Advisories in development-only dependencies and in lock entries no workspace member reaches are listed but don't change the verdict.",
     "- **ready (npm dependencies assessed)**: none of the above. It does not mean the application is safe to deploy.",
     "- Coverage is **complete** when every supported npm lockfile was assessed, **partial** when something was not checked or not assessed, and **failed** when nothing could be assessed.",
     `- Key packages: ${context.keyPackages.map(code).join(", ")}. Advisory data: [OSV](https://osv.dev); advisories without a severity count as moderate.`,

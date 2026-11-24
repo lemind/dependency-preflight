@@ -6,8 +6,11 @@ import { upgradeGap, type RegistryLookup, type UpgradeGap } from "./registry.js"
 export type Verdict = "blocked" | "review" | "ready";
 export type Coverage = "complete" | "partial" | "failed";
 
-/** Ranking tiers, most urgent first. A package no workspace member reaches counts as transitive runtime. */
-export type Tier = "malicious" | "direct-runtime" | "transitive-runtime" | "dev";
+/**
+ * Ranking tiers, most urgent first. "unreachable": locked, but no workspace member's dependency graph reaches it
+ * (e.g. an entry kept by "resolutions"); it is checked and listed, and only a malicious version affects the verdict.
+ */
+export type Tier = "malicious" | "direct-runtime" | "transitive-runtime" | "dev" | "unreachable";
 
 export type AdvisoryFinding = {
   package: LockedPackage;
@@ -30,7 +33,14 @@ export type OutdatedFinding = {
   gap: Exclude<UpgradeGap, "none">;
 };
 
-export type NotChecked = { name: string; version?: string; lockfile: string; runtime: boolean; reason: string };
+export type NotChecked = {
+  name: string;
+  version?: string;
+  lockfile: string;
+  runtime: boolean;
+  unreachable: boolean;
+  reason: string;
+};
 
 export type Assessment = {
   verdict: Verdict;
@@ -52,14 +62,22 @@ export const DEFAULT_KEY_PACKAGES = ["@solana/*", "@coral-xyz/anchor"];
 export const isKeyPackage = (name: string, patterns: string[]): boolean =>
   patterns.some((pattern) => (pattern.endsWith("/*") ? name.startsWith(pattern.slice(0, -1)) : name === pattern));
 
-export const isRuntime = (usages: Usage[]): boolean => usages.length === 0 || usages.some((usage) => usage.runtime);
+export const isRuntime = (usages: Usage[]): boolean => usages.some((usage) => usage.runtime);
 export const isDirect = (usages: Usage[]): boolean => usages.some((usage) => usage.direct);
 const isDirectRuntime = (usages: Usage[]): boolean => usages.some((usage) => usage.direct && usage.runtime);
 
-const TIER_ORDER: Tier[] = ["malicious", "direct-runtime", "transitive-runtime", "dev"];
+const TIER_ORDER: Tier[] = ["malicious", "direct-runtime", "transitive-runtime", "dev", "unreachable"];
 
 const tierOf = (malicious: boolean, usages: Usage[]): Tier =>
-  malicious ? "malicious" : isDirectRuntime(usages) ? "direct-runtime" : isRuntime(usages) ? "transitive-runtime" : "dev";
+  malicious
+    ? "malicious"
+    : usages.length === 0
+      ? "unreachable"
+      : isDirectRuntime(usages)
+        ? "direct-runtime"
+        : isRuntime(usages)
+          ? "transitive-runtime"
+          : "dev";
 
 const highestFix = (groups: AdvisoryGroup[]): string | undefined =>
   groups.every((group) => group.fixedIn) ? groups.map((group) => group.fixedIn!).sort(semver.rcompare)[0] : undefined;
@@ -99,6 +117,7 @@ export const decide = (
         version: locked.version,
         lockfile: locked.lockfile,
         runtime: isRuntime(locked.usages),
+        unreachable: locked.usages.length === 0,
         reason: failure ?? "advisory lookup did not return a result",
       });
       continue;
@@ -122,6 +141,7 @@ export const decide = (
       name: dependency.name,
       lockfile: dependency.lockfile,
       runtime: isRuntime(dependency.usages),
+      unreachable: dependency.usages.length === 0,
       reason: `not assessed: ${dependency.reason} (${dependency.source})`,
     });
 
@@ -167,7 +187,7 @@ export const decide = (
     );
   const reviewReasons: string[] = [];
   const otherRuntime = advisories.filter(
-    (finding) => !finding.malicious && finding.tier !== "dev" && !severeDirect.includes(finding),
+    (finding) => (finding.tier === "direct-runtime" || finding.tier === "transitive-runtime") && !severeDirect.includes(finding),
   );
   if (otherRuntime.length) reviewReasons.push(`advisories in ${plural(otherRuntime.length, "runtime dependency version")}`);
   const uncheckedRuntime = notChecked.filter((item) => item.runtime);

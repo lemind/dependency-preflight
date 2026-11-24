@@ -266,8 +266,12 @@ script; outside reproduction moved earlier.
   `package.json`; disagreement means "not assessed". Examples: drift `sdk/` `@coral-xyz/anchor-30` is
   `@coral-xyz/anchor` 0.30.1; anchor `ts/` `@anchor-lang/solana-web3-v3` is `@solana/web3.js` 3.0.0; wallet-adapter's
   `@types/web` override is `typescript` 5.8.3 (a runtime dependency there, as a resolved peer of `@solana/codecs-*`).
-- Lock entries no workspace member reaches (e.g. kept by `resolutions`) are still checked, shown as unattributed and
-  counted as runtime.
+- Lock entries no workspace member reaches (e.g. kept by `resolutions`) are still checked and listed as unreachable.
+  Their advisories don't change the verdict, except a malicious version, which still blocks (the graph walk can't
+  prove it is never installed).
+- zod upgraded to 4.6 (advisory below 4.6.6; the copied miner-answer schema will import `zod/v3`) and vitest to 5
+  (no tinypool any more); `npm audit` is clean.
+- The clean demo uses `@solana/kit` alone, pinned to the version captured in its fixture.
 - `@solana/web3.js` latest is 3.2.1, so any 1.x lock is an outdated key package (review). The remediation demo moves
   from blocked to **review**, and the clean demo needs web3.js 3.x or `@solana/kit`.
 - Full reports are 30–80 KB; GitHub comments are capped at 65,536 characters, so T031 needs a condensed comment

@@ -204,6 +204,21 @@ describe("verdict rules", () => {
     const web3 = { "@solana/web3.js": { latest: "1.98.4", versions: ["1.95.8", "1.98.4"] } };
     expect(await verdictOf(project({ "@solana/web3.js": "1.95.8" }), web3)).toBe("ready");
   });
+  it("lock entries no member reaches: advisories listed but not in the verdict; a malicious one still blocks", async () => {
+    const unreachable = (name: string, version: string) =>
+      writeTree({
+        "package.json": { dependencies: {} },
+        "package-lock.json": {
+          lockfileVersion: 3,
+          packages: { "": {}, [`node_modules/${name}`]: { version, resolved: tarball(name, version) } },
+        },
+      });
+    const lowOnly = await assess(unreachable("high-dep", "1.0.0"), DEFAULT_KEY_PACKAGES, replayFetcher(recording));
+    expect(lowOnly.advisories.map((finding) => finding.tier)).toEqual(["unreachable"]);
+    expect(lowOnly.verdict).toBe("ready");
+    const malware = await assess(unreachable("@solana/web3.js", "1.95.6"), DEFAULT_KEY_PACKAGES, replayFetcher(controlled, web3Registry));
+    expect(malware.verdict).toBe("blocked");
+  });
   it("upgrade gaps", () => {
     expect(upgradeGap("0.29.0", "0.30.1")).toBe("major");
     expect(upgradeGap("1.95.8", "3.2.1")).toBe("major");

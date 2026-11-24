@@ -99,6 +99,7 @@ Someone without CI access pastes a public GitHub repository URL into a web page 
 - The repository has no npm lockfile, or only a manifest without a lockfile: the report says what was missing, and that versions could not be pinned.
 - Lockfile formats not supported: the file is named in the report as not assessed.
 - Monorepo members that pin different versions of the same package: each pinned version is assessed and attributed to its member.
+- A lockfile entry that no workspace member's dependency graph reaches (for example, one kept by `resolutions`): it is still checked and listed as unreachable; its advisories don't change the verdict, except a malicious version, which still makes it **blocked**.
 - The miner returns an answer that fails validation (malformed, or quotes that don't match its sources): it is treated as unusable and not shown as guidance.
 - A pull request from a fork: the check runs without any wallet or secret, so it stays in the free mode.
 
