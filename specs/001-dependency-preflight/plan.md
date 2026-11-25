@@ -24,8 +24,8 @@ comment updated. P4 (a web page) is optional.
 for Node 24 (`runs.using: node24`). Developed on Node 26.
 
 **Primary Dependencies**: `@actions/core` (inputs, outputs, job summary), `@yarnpkg/parsers` (Yarn 1 and pnpm YAML),
-`semver`; for P2, `viem` and `zod` (≥ 4.6.6; the copied miner schema imports `zod/v3`). Approved 24 Nov. **Open:** the
-PR Agent's escrow client also needs `@x402/fetch` and `@x402/evm`, not yet approved (research R9).
+`semver`; for P2, `viem` and `zod` (≥ 4.6.6; the copied miner schema imports `zod/v3`). Approved 24 Nov. The PR Agent's
+escrow client also needs `@x402/fetch` and `@x402/evm` 2.32.0, pinned exactly (approved 25 Nov, research R9).
 
 **Storage**: none for P1. P2: an append-only JSONL record on a `preflight` branch of the installer's repository,
 written through the GitHub API.
@@ -60,7 +60,7 @@ repositories and three demo scenarios; deadline 1 Dec 2026, 23:59 UTC.
 | No paid call, signature or testnet spend without approval | Pass. Nothing paid so far. T025 (first paid run) and T026 (miner deploy) wait for approval. |
 | Scanned repositories and miner answers are untrusted input | Pass. Lockfiles are parsed as data; identity is verified against registry tarball URLs; report cells are escaped; P2 validates answers with a schema. |
 | No silent failures | Pass. Every failed lookup becomes "not checked" or "not assessed" and lowers coverage; failed coverage fails the step. |
-| New dependencies only with approval and a reason in the PR | **Open** for `@x402/fetch` and `@x402/evm` (P2). Everything installed today is approved and listed in PR #2. |
+| New dependencies only with approval and a reason in the PR | Pass. `@x402/fetch` and `@x402/evm` approved 25 Nov (R9). Everything installed is approved and listed in PR #2. |
 | Docs in sync; claim only what was run | Pass. README states P1 works locally and in tests and hasn't run on a hosted runner against a target repository. |
 
 Re-check after design: unchanged. The only open gate is the P2 dependency approval, which blocks T020, not P1.
@@ -123,7 +123,7 @@ Agent. Modules map one-to-one to concerns; `assess.ts` was added during Phase 1 
 | --- | --- | --- |
 | 0 | Setup: package, bundle, fixtures, CI | Done (PR #2) |
 | 1 | P1 verdict in CI | Done (PR #2): 35 offline tests; local free-mode runs on the three targets |
-| 2 | P2 paid explanations | Planned. Blocked on the `@x402/*` approval (R9); first paid run T025 needs approval |
+| 2 | P2 paid explanations | Planned; `@x402/*` approved 25 Nov (R9). First paid run T025 needs approval |
 | 3 | P3 re-check after the fix, PR comment | Planned. Comment is a condensed summary that links the job summary (R12) |
 | 4 | Demo, docs, submission | Planned |
 | 5 | P4 web page | Only if P1–P3 are done |
