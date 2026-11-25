@@ -92,6 +92,9 @@ describe("compare: identity", () => {
       { status: "open", kind: "outdated", baseVersion: "0.29.0", headVersion: "0.31.0" },
     ]);
     expect(statuses(base, assessment())).toEqual(["resolved outdated @coral-xyz/anchor"]);
+    // Still open, but now a minor release behind: the head's gap is what's reported (review, 25 Nov).
+    const minor = { ...outdated("@coral-xyz/anchor", "0.32.0", "0.32.1"), gap: "minor" as const };
+    expect(compare(base, assessment({ outdated: [minor] })).findings).toMatchObject([{ status: "open", gap: "minor", headVersion: "0.32.0" }]);
     expect(statuses(base, assessment({ latestUnknown: ["@coral-xyz/anchor"] }))).toEqual([
       "unverified outdated @coral-xyz/anchor (the latest release of @coral-xyz/anchor could not be looked up on the head)",
     ]);

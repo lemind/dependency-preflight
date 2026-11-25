@@ -106,7 +106,8 @@ export const compare = (base: Assessment, head: Assessment): Comparison => {
     const match = headEntries.find((candidate) => sameFinding(entry, candidate));
     if (match) {
       matchedHead.add(match);
-      findings.push({ ...fields, tier: match.tier, severity: match.severity, ids: [...new Set([...match.ids, ...entry.ids])], baseVersion: version, headVersion: match.version, status: "open" });
+      // Open: the head's state is the current one (a key package may now be only a minor release behind).
+      findings.push({ ...fields, tier: match.tier, severity: match.severity, gap: match.gap, key: match.key, malicious: match.malicious, ids: [...new Set([...match.ids, ...entry.ids])], baseVersion: version, headVersion: match.version, status: "open" });
       continue;
     }
     const reason = unverifiedReason(entry, head);

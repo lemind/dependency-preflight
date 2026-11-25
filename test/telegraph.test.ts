@@ -444,6 +444,22 @@ describe("IntelligenceClient.buy attempt stages", () => {
     expect(client.spentUsdc).toBeCloseTo(0.05);
   });
 
+  // Added in this repository (review, 25 Nov): "reserved" blocks a key here, so a failure before paying must close it.
+  it("closes the attempt as failed_not_charged when the quote fails before any payment", async () => {
+    for (const quote of [
+      async () => new Response("bad gateway", { status: 502 }),
+      async () => { throw new Error("ECONNRESET"); },
+    ]) {
+      const rec = recorder();
+      const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+        String(input).includes("/api/miners") ? new Response(JSON.stringify(API_MINERS)) : quote());
+      const { client, paymentFetch } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch, preferredMinerId: "148002" });
+      await expect(client.buy("QUESTION_ANSWERING", "x", rec.onAttempt)).rejects.toBeInstanceOf(AskFailedError);
+      expect(rec.states()).toEqual(["reserved", "failed_not_charged"]);
+      expect(paymentFetch).not.toHaveBeenCalled();
+    }
+  });
+
   it("records quote_refused with the quote and reason when the price limit refuses it", async () => {
     const rec = recorder();
     const { client, paymentFetch } = makeClient({ maxPricePerCallUsdc: 0.001 });

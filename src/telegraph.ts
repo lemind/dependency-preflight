@@ -440,18 +440,28 @@ export class IntelligenceClient {
       }),
     };
 
+    // Changed from the PR Agent (review, 25 Nov): here "reserved" is an open state that blocks the key, so every
+    // failure before the paid request closes the attempt as failed_not_charged (no money has moved yet).
+    const notCharged = async (reason: string): Promise<never> => {
+      await onAttempt({ state: "failed_not_charged", minerId: miner.id, reason: reason.slice(0, 300) });
+      throw new AskFailedError(reason);
+    };
+
     // Quote: unsigned request → 402 challenge carries the live price.
-    const quoteRes = await this.fetchImpl(url, init);
+    let quoteRes: Response;
+    try {
+      quoteRes = await this.fetchImpl(url, init);
+    } catch (err) {
+      return notCharged(`quote request failed: ${String(err)}`);
+    }
     if (quoteRes.status !== 402) {
-      throw new AskFailedError(
-        `expected a 402 quote, got HTTP ${quoteRes.status}`,
-      );
+      return notCharged(`expected a 402 quote, got HTTP ${quoteRes.status}`);
     }
     const accept = quotedAccept(quoteRes, this.network, this.usdcAddress);
     const escrow =
       accept === null ? escrowAccept(quoteRes, this.network) : null;
     if (accept === null && escrow === null) {
-      throw new AskFailedError(
+      return notCharged(
         `402 offers neither exact payment in ${this.usdcAddress} nor escrow on ${this.network}`,
       );
     }
@@ -484,8 +494,15 @@ export class IntelligenceClient {
 
     // Signed before request_sent: signing moves no money, and a malformed challenge
     // then fails like a missing payment option (no money moved).
-    const escrowHeader =
-      escrow === null ? null : await escrowPayment(this.account, escrow);
+    let escrowHeader: string | null = null;
+    if (escrow !== null) {
+      try {
+        escrowHeader = await escrowPayment(this.account, escrow);
+      } catch (err) {
+        if (!(err instanceof AskFailedError)) throw err;
+        return notCharged(err.message);
+      }
+    }
     await onAttempt({
       state: "request_sent",
       minerId: miner.id,
