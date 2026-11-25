@@ -16,6 +16,8 @@ The Action's public interface: `action.yml` inputs and outputs, environment, exi
 | `max-price-per-call-usdc` | `0.05` | P2 | per-call cap |
 | `budget-cap-usdc` | `0.30` | P2 | per-run cap |
 | `max-purchases` | `10` | P2 | purchases per run |
+| `chain-id` | `11155111` | P2 | the only payment chain allowed (Ethereum Sepolia) |
+| `usdc-address` | `0xcc194e1a843B658526D0D5C431f670028582Ae17` | P2 | the only USDC contract allowed on that chain |
 
 ## Environment
 
