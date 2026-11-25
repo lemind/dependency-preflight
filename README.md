@@ -1,13 +1,22 @@
 # dependency-preflight
 
-Pre-deploy dependency check for Solana and any npm project, backed by Telegraph intelligence.
+Pre-deploy **npm dependency check** for Solana and any JavaScript/TypeScript project, backed by Telegraph
+intelligence.
 
-Point it at a repository and it reports, before you deploy:
+Run it in CI before you deploy. It:
 
-- dependency versions that are compromised or have known advisories (OSV);
-- upgrades that break your code, with exactly what changes and why, quoted from the release notes and bought as a sourced answer from a Telegraph miner (with a receipt);
-- a verdict (ready / review / blocked), and the same check again after you fix it.
+- flags **compromised** (malware) and **vulnerable** dependency versions, from public advisory data (OSV);
+- for outdated key packages (`@solana/*`, `@coral-xyz/anchor`, configurable), buys a sourced "what changed" answer
+  from a Telegraph miner: the breaking changes, what to change, quotes and links to the release notes, with a
+  receipt for each purchase;
+- gives a verdict (**blocked**, **review** or **ready**) with its coverage, and re-checks after you fix it.
 
-Built for the Telegraph Hackathon Season II (Apps & Agents, mission 10, Model Economy). It reuses the [Telegraph PR Agent](https://github.com/borodedamie/telegraph-pr-agent) team's package-release miner (Telegraph miner 7314).
+**Not a security audit.** It doesn't read your code, run your tests or check Rust crates. "Ready" means your npm
+dependencies passed these checks, not that the app is safe to deploy.
 
-**Status:** in development; nothing below is built yet. Testnet only (Ethereum Sepolia test USDC).
+Built for the Telegraph Hackathon Season II (Apps & Agents, mission 10, Model Economy). It reuses the
+[Telegraph PR Agent](https://github.com/borodedamie/telegraph-pr-agent) team's package-release miner (Telegraph
+miner 7314). Testnet only (Ethereum Sepolia test USDC).
+
+**Status:** in development; nothing works yet. Context, plan and tasks: [PROJECT.md](PROJECT.md). Spec:
+[specs/001-dependency-preflight/spec.md](specs/001-dependency-preflight/spec.md).
