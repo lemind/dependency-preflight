@@ -1,5 +1,7 @@
 import type { LockedPackage } from "./lockfiles.js";
 import type { AdvisoryGroup } from "./osv.js";
+import type { Explanation } from "./explain.js";
+import type { UpgradeResult } from "./purchase.js";
 import type { AdvisoryFinding, Assessment, OutdatedFinding, Tier } from "./verdict.js";
 
 export type ReportContext = {
@@ -11,6 +13,8 @@ export type ReportContext = {
   keyPackages: string[];
   /** Shown at the top, e.g. "Controlled test case: historical incident (December 2024)". */
   caseLabel?: string;
+  /** Upgrade explanations (P2); absent when not run. */
+  upgrades?: UpgradeResult;
 };
 
 const MAX_ROWS = 50;
@@ -74,6 +78,77 @@ const advisoryTable = (findings: AdvisoryFinding[]): string[] => [
 const outdatedRow = (finding: OutdatedFinding): string =>
   `| ${packageName(finding)} | ${code(finding.package.version)} | ${code(finding.latest)} | ${finding.gap === "major" && finding.package.version.startsWith("0.") ? "major (minor on 0.x)" : finding.gap} | ${finding.runtime ? "runtime" : "dev"} | ${where(finding.package, false)} | [release notes](https://www.npmjs.com/package/${finding.package.name}?activeTab=versions) |`;
 
+const MAX_CHANGES = 30;
+
+/** A link target from untrusted text: already checked to be https; parentheses and spaces can't end the link. */
+const linkTarget = (url: string): string =>
+  url.replace(/[()\s<>]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
+
+const releaseNotes = (name: string): string => `[release notes](https://www.npmjs.com/package/${name}?activeTab=versions)`;
+
+const explanationLines = (explanation: Explanation): string[] => {
+  const heading = `#### ${code(explanation.name)} ${code(explanation.from)} → ${code(explanation.to)}`;
+  if (explanation.outcome === "not_found")
+    return [heading, "", `The miner found no release material for this upgrade. This does not mean nothing changed: see the ${releaseNotes(explanation.name)}.`, ""];
+  if (explanation.outcome === "unusable")
+    return [heading, "", `The answer could not be used and is not shown as guidance: ${cell(explanation.reason ?? "")}. See the ${releaseNotes(explanation.name)}.`, ""];
+  if (explanation.outcome === "unavailable")
+    return [heading, "", `No answer: ${cell(explanation.reason ?? "")}. See the ${releaseNotes(explanation.name)}.`, ""];
+  const lines = [heading, ""];
+  if (explanation.introducedAdvisories.length)
+    lines.push(`> ⚠️ The miner reports that ${code(explanation.to)} introduces ${explanation.introducedAdvisories.map(advisoryLink).join(", ")}. Check before upgrading.`, "");
+  lines.push(`Release coverage reported by the miner: ${explanation.coverageComplete ? "complete" : "partial"}.`, "");
+  if (!explanation.changes.length) lines.push(`No documented change with a quote was returned. See the ${releaseNotes(explanation.name)}.`, "");
+  for (const change of explanation.changes.slice(0, MAX_CHANGES)) {
+    lines.push(`- **${change.kind.replace("_", " ")}** in ${code(change.version)}: ${cell(change.change)}${change.migration ? `<br>Migration: ${cell(change.migration)}` : ""}<br>“${cell(change.quote)}” ([source](${linkTarget(change.sourceUrl)}))`);
+  }
+  if (explanation.changes.length > MAX_CHANGES) lines.push(`- … ${explanation.changes.length - MAX_CHANGES} more`);
+  lines.push("");
+  return lines;
+};
+
+const upgradeLines = (upgrades: UpgradeResult): string[] => {
+  const lines = ["### Upgrade explanations (Telegraph, P2)", ""];
+  if (upgrades.mode === "free") {
+    lines.push(`No explanation was bought: ${cell(upgrades.freeReason ?? "")}.`, "");
+    if (upgrades.candidates.length)
+      lines.push(
+        "Upgrades that would be explained:",
+        "",
+        "| Package | Locked | Latest | Gap | Changes |",
+        "| --- | --- | --- | --- | --- |",
+        ...upgrades.candidates.slice(0, MAX_ROWS).map((candidate) => `| ${candidate.key ? "🔑 " : ""}${code(candidate.name)} | ${code(candidate.from)} | ${code(candidate.to)} | ${candidate.gap} | ${releaseNotes(candidate.name)} |`),
+        "",
+      );
+  } else {
+    if (upgrades.stoppedReason) lines.push(`Buying stopped: ${cell(upgrades.stoppedReason)}.`, "");
+    for (const warning of upgrades.warnings) lines.push(`> ⚠️ ${cell(warning)}`, "");
+    if (!upgrades.explanations.length && !upgrades.candidates.length) lines.push("No upgrade needed an explanation.", "");
+    for (const explanation of upgrades.explanations) lines.push(...explanationLines(explanation));
+    if (upgrades.purchases.length)
+      lines.push(
+        `Purchases (spent this run: ${upgrades.spentUsdc.toFixed(2)} test USDC):`,
+        "",
+        "| Package | Miner | Price (test USDC) | Receipt | Signal | |",
+        "| --- | --- | --- | --- | --- | --- |",
+        ...upgrades.purchases.map((purchase) => `| ${code(purchase.name)} ${code(purchase.from)} → ${code(purchase.to)} | ${code(purchase.receipt.minerId)} | ${purchase.receipt.amountUsdc} | ${code(purchase.receipt.receiptHash || "none")}${purchase.receipt.rail === "escrow" ? ` (escrow${purchase.receipt.epochId !== undefined ? `, epoch ${purchase.receipt.epochId}` : ""})` : purchase.receipt.txHash ? ` (tx ${code(purchase.receipt.txHash)})` : ""} | ${code(purchase.receipt.signalHash || "none")} | ${purchase.reused ? "reused from an earlier run" : "bought this run"} |`),
+        "",
+      );
+    lines.push("Miner 7314 (Package Release Intelligence) is run by the same team as this check: purchases from it are related-party tests on testnet.", "");
+  }
+  if (upgrades.skipped.length)
+    lines.push(
+      `<details><summary>Upgrades not explained (${upgrades.skipped.length})</summary>`,
+      "",
+      ...upgrades.skipped.slice(0, MAX_ROWS).map((skipped) => `- ${code(skipped.name)} ${code(skipped.from)} → ${code(skipped.to)}: ${cell(skipped.reason)}`),
+      ...(upgrades.skipped.length > MAX_ROWS ? [`- … ${upgrades.skipped.length - MAX_ROWS} more`] : []),
+      "",
+      "</details>",
+      "",
+    );
+  return lines;
+};
+
 /** Renders the assessment as one Markdown report: verdict and coverage first, then the findings in ranked order. */
 export const renderReport = (assessment: Assessment, context: ReportContext): string => {
   const lines: string[] = [];
@@ -118,6 +193,7 @@ export const renderReport = (assessment: Assessment, context: ReportContext): st
   const outdatedHeader = ["| Package | Locked | Latest | Gap | Used at | Where | Changes |", "| --- | --- | --- | --- | --- | --- | --- |"];
   if (outdatedKey.length)
     lines.push(`### Outdated key packages (${outdatedKey.length})`, "", ...outdatedHeader, ...outdatedKey.slice(0, MAX_ROWS).map(outdatedRow), "");
+  if (context.upgrades) lines.push(...upgradeLines(context.upgrades));
 
   const devFindings = assessment.advisories.filter((finding) => finding.tier === "dev");
   if (devFindings.length)

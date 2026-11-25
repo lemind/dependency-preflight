@@ -15,11 +15,37 @@ inputs:
     default: "@solana/*,@coral-xyz/anchor"
   case-label:
     description: "Optional label shown at the top of the report, e.g. for a historical or controlled test case"
+  github-token:
+    description: "Token that writes the purchase record to the preflight branch (needs contents: write). Without write access nothing is bought."
+    default: "${{ github.token }}"
+  miner-id:
+    description: "Telegraph miner asked for upgrade explanations (the only one asked)"
+    default: "7314"
+  node-url:
+    description: "Telegraph node"
+    default: "https://devnode.telegraphprotocol.com"
+  max-price-per-call-usdc:
+    description: "Highest price paid for one answer, in test USDC"
+    default: "0.05"
+  budget-cap-usdc:
+    description: "Most spent in one run, in test USDC"
+    default: "0.30"
+  max-purchases:
+    description: "Most upgrades explained in one run (bought or reused)"
+    default: "10"
+  chain-id:
+    description: "The only payment chain allowed (Ethereum Sepolia)"
+    default: "11155111"
+  usdc-address:
+    description: "The only USDC contract allowed on that chain"
+    default: "0xcc194e1a843B658526D0D5C431f670028582Ae17"
 outputs:
   verdict:
     description: "blocked, review or ready"
   coverage:
     description: "complete, partial or failed"
+  spent-usdc:
+    description: "Test USDC spent on explanations in this run"
 runs:
   using: "node24"
   main: "dist/index.cjs"

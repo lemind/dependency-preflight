@@ -1,7 +1,8 @@
 # Contract: the `dependency-preflight` Action
 
 The Action's public interface: `action.yml` inputs and outputs, environment, exit behaviour and the report.
-**[built]** items exist on PR #2; **[P2]**/**[P3]** are planned and not in `action.yml` yet.
+**built** items exist on PR #2; **P2 built** is in `action.yml` and tested offline, not yet run with a wallet (T025);
+**P3** is planned and not in `action.yml` yet.
 
 ## Inputs
 
@@ -11,13 +12,14 @@ The Action's public interface: `action.yml` inputs and outputs, environment, exi
 | `fail-on` | `blocked` | built | lowest verdict that fails the step: `blocked` or `review`. Failed coverage always fails |
 | `key-packages` | `@solana/*,@coral-xyz/anchor` | built | comma-separated exact names or `<scope>/*` patterns |
 | `case-label` | (none) | built | label shown at the top of the report, e.g. for a historical or controlled case (FR-016) |
-| `miner-id` | `7314` | P2 | Telegraph miner asked for explanations |
-| `node-url` | `https://devnode.telegraphprotocol.com` | P2 | Telegraph node |
-| `max-price-per-call-usdc` | `0.05` | P2 | per-call cap |
-| `budget-cap-usdc` | `0.30` | P2 | per-run cap |
-| `max-purchases` | `10` | P2 | purchases per run |
-| `chain-id` | `11155111` | P2 | the only payment chain allowed (Ethereum Sepolia) |
-| `usdc-address` | `0xcc194e1a843B658526D0D5C431f670028582Ae17` | P2 | the only USDC contract allowed on that chain |
+| `miner-id` | `7314` | P2 built | Telegraph miner asked for explanations; the only one asked (no leaderboard fallback) |
+| `node-url` | `https://devnode.telegraphprotocol.com` | P2 built | Telegraph node |
+| `max-price-per-call-usdc` | `0.05` | P2 built | per-call cap |
+| `budget-cap-usdc` | `0.30` | P2 built | per-run cap |
+| `max-purchases` | `10` | P2 built | upgrades explained per run (bought or reused) |
+| `chain-id` | `11155111` | P2 built | the only payment chain allowed (Ethereum Sepolia) |
+| `usdc-address` | `0xcc194e1a843B658526D0D5C431f670028582Ae17` | P2 built | the only USDC contract allowed on that chain |
+| `github-token` | `${{ github.token }}` | P2 built | writes the purchase record and lease (`contents: write`); without write access nothing is bought (FR-009b). P3 will use it for the comment (`pull-requests: write`) |
 
 ## Environment
 
@@ -26,8 +28,9 @@ The Action's public interface: `action.yml` inputs and outputs, environment, exi
 | `GITHUB_WORKSPACE` | built | required; the checkout |
 | `GITHUB_REPOSITORY`, `GITHUB_SHA` | built | shown in the report |
 | `GITHUB_STEP_SUMMARY` | built | report destination (stdout when absent) |
-| `TELEGRAPH_EVM_PRIVATE_KEY` | P2 | optional wallet; absent means free mode (FR-011). Never logged |
-| `GITHUB_TOKEN` | P2/P3 | record and lease writes (`contents: write`), PR comment (`pull-requests: write`). Without a writable record no purchase is made (FR-009b) |
+| `TELEGRAPH_EVM_PRIVATE_KEY` | P2 built | optional wallet; absent or malformed means free mode (FR-011). Masked, never logged |
+| `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT` | P2 built | the run id in the purchase record and lease |
+| `GITHUB_API_URL`, `GITHUB_GRAPHQL_URL` | P2 built | GitHub API endpoints for the record (github.com when absent) |
 
 ## Outputs
 
@@ -35,6 +38,7 @@ The Action's public interface: `action.yml` inputs and outputs, environment, exi
 | --- | --- | --- |
 | `verdict` | built | `blocked`, `review`, `ready` |
 | `coverage` | built | `complete`, `partial`, `failed` |
+| `spent-usdc` | P2 built | test USDC spent on explanations this run, e.g. `0.04` |
 
 ## Exit behaviour [built]
 
@@ -62,7 +66,7 @@ Markdown in the job summary, in this order:
 
 Tables are capped at 50 rows with a "… N more" line. Text from lockfiles and advisories is escaped for table cells.
 
-**[P2]** adds an explanations section (per package: breaking changes and deprecations with migration, quote and link,
+**[P2 built]** adds, after the outdated key packages, an explanations section (per package: breaking changes and deprecations with migration, quote and link,
 breaking first, then deprecations and security fixes, oldest version first; a warning for any vulnerability the
 miner says the target version introduces; `not_found`, unavailable or unusable stated) and a purchases section (miner, price, receipt, signal), plus
 skipped candidates with reasons, and the reason when paid explanations were skipped (no wallet, record not writable,

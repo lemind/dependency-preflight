@@ -30,6 +30,36 @@ jobs:
 The report is in the run's summary; outputs `verdict` and `coverage` are available to later steps. Never add
 `npm install` or repository scripts to this job.
 
+## Paid explanations (P2): not yet run with a wallet
+
+Built and tested offline (T024); the first paid run is T025. The intended setup: a dedicated testnet wallet with an
+escrow deposit, stored as a repository secret, and write access for the purchase record.
+
+```yaml
+permissions:
+  contents: write          # the purchase record on the preflight branch
+concurrency:
+  group: dependency-preflight-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15     # shorter than the 20-minute lease
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: lemind/dependency-preflight@<commit sha>
+        env:
+          TELEGRAPH_EVM_PRIVATE_KEY: ${{ secrets.TELEGRAPH_EVM_PRIVATE_KEY }}
+        with:
+          path: sdk
+```
+
+Without the secret (and on pull requests from forks) it runs in free mode and lists the upgrades it would explain.
+Purchases are capped at 0.05 test USDC per call, 0.30 per run and 10 per run (inputs in contracts/action.md); output
+`spent-usdc` reports the run's spend.
+
 ## Run locally against a checkout
 
 ```bash
