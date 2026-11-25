@@ -105,7 +105,7 @@ the malware finding resolved and the verdict moving from blocked to review (web3
 **Purpose**: the three scenarios end to end, documentation, outside reproduction, submission.
 
 - [x] T046 ⚠ Clean demo: create a controlled public repository locking `@solana/kit` 8.6.0 only (research R13), with the workflow; confirm ready (npm dependencies assessed) **Done 25 Nov** (approved): [lemind/preflight-demo-clean](https://github.com/lemind/preflight-demo-clean), `@solana/kit` 8.6.0 (latest that day) with the lockfile npm resolved (`--package-lock-only --ignore-scripts`; 47 locked versions, 43 `@solana/*`); [run](https://github.com/lemind/preflight-demo-clean/actions/runs/45594603907): ready (npm dependencies assessed), coverage complete, Action at `98e6c7a`. Ready can change with a new advisory or a new kit release
-- [ ] T040 `README.md`: what it is, the three scenarios with real outputs, install (workflow file plus optional secret), costs, limits, disclosure (related-party miner, testnet)
+- [x] T040 `README.md`: what it is, the three scenarios with real outputs, install (workflow file plus optional secret), costs, limits, disclosure (related-party miner, testnet)
 - [ ] T041 Run all scenarios end to end; save the reports under `docs/results/` with date, repository and commit
 - [ ] T042 Reproduction by someone outside the team following only the README (SC-005); start as soon as T047 passes; a self-contained prompt for the Grok browser agent can help
 - [ ] T043 ⚠ Walkthrough video (2–5 min): problem, run, verdict, explanation with receipt, fix, re-check

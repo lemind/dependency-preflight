@@ -31,9 +31,10 @@ jobs:
 The report is in the run's summary; outputs `verdict` and `coverage` are available to later steps. Never add
 `npm install` or repository scripts to this job.
 
-## Paid explanations (P2): not yet run with a wallet
+## Paid explanations (P2)
 
-Built and tested offline (T024); the first paid run is T025. The intended setup: a dedicated testnet wallet with an
+Run on a GitHub-hosted runner on 25 Nov 2026 (T025, related-party test on a protocol-v2 fork): three explanations
+from miner 7314 for 0.06 test USDC; the rerun reused them and spent 0.00. Setup: a dedicated testnet wallet with an
 escrow deposit, stored as a repository secret, and write access for the purchase record.
 
 ```yaml
