@@ -19,6 +19,6 @@ Built for the Telegraph Hackathon Season II (Apps & Agents, mission 10, Model Ec
 miner 7314). Testnet only (Ethereum Sepolia test USDC).
 
 **Status:** in development. The free check (P1: lockfiles, OSV advisories, verdict and coverage, job summary, fail on
-blocked) works in local runs and offline tests; it hasn't run on a hosted runner yet, and paid explanations (P2) and
-the re-check on pull requests (P3) are not built. Context, plan and tasks: [PROJECT.md](PROJECT.md). Spec:
+blocked) works in offline tests and on a GitHub-hosted runner (25 Nov, three pinned Solana repositories:
+[run](https://github.com/lemind/dependency-preflight-hosted-check/actions/runs/45557722045)). Paid explanations (P2) and the re-check on pull requests (P3) are not built. Context, plan and tasks: [PROJECT.md](PROJECT.md). Spec:
 [specs/001-dependency-preflight/spec.md](specs/001-dependency-preflight/spec.md).

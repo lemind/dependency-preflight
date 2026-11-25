@@ -1,7 +1,7 @@
 # Quickstart: Dependency preflight
 
-Status (24 Nov): the free check (P1) works in local runs and offline tests. It has not yet run on a hosted runner
-against a target repository, so the workflow below is the intended setup, not a verified one.
+Status (25 Nov): the free check (P1) works in offline tests and on a GitHub-hosted runner: the workflow below, run
+in [lemind/dependency-preflight-hosted-check](https://github.com/lemind/dependency-preflight-hosted-check/actions/runs/45557722045) against three pinned target repositories.
 
 ## Add it to a repository (free mode)
 
