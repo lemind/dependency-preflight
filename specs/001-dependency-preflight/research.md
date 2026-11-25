@@ -6,8 +6,8 @@ rationale, alternatives. "Verified" means run or measured on the date given.
 ## R1. Packaging: a Node GitHub Action with a committed bundle
 
 - **Decision**: TypeScript compiled for type checking only, bundled by esbuild (pinned 0.28.2) into `dist/index.cjs`,
-  committed; `runs.using: node24`. CI rebuilds and fails if the bundle differs, then smoke-runs it with an empty
-  environment.
+  committed; `runs.using: node24`. CI runs on Node 24 (`setup-node` `node-version: 24`, the runtime users get), rebuilds and fails
+  if the bundle differs, then smoke-runs it with an empty environment and runs the tests.
 - **Rationale**: the PR Agent ships the same way; no install step runs on the user's runner.
 - **Alternatives**: a Docker action (slower, larger); publishing to npm and installing at run time (an install step in
   the job that may hold a wallet).
@@ -50,7 +50,7 @@ rationale, alternatives. "Verified" means run or measured on the date given.
 
 ## R5. Workspace references and unreachable lock entries
 
-- **Decision**: a workspace link that resolves to a member is that member, assessed through its own dependencies, and
+- **Decision** (FR-001a): a workspace link that resolves to a member is that member, assessed through its own dependencies, and
   is not listed as not assessed; an unresolvable local link is. Lock entries no member reaches (11 in drift `sdk/`,
   kept by `resolutions`) are still checked and shown as **unreachable**: their advisories don't change the verdict,
   except a malicious version, which still blocks (the graph walk can't prove the package is never installed).
@@ -83,7 +83,8 @@ rationale, alternatives. "Verified" means run or measured on the date given.
 - **Decision**: tiers malicious > direct runtime > transitive runtime > dev > unreachable; key packages first, then
   severity, then name. Blocked: any malicious version, or a high/critical advisory in a direct runtime dependency.
   Review: other runtime advisories, an unchecked runtime dependency, an outdated key package (major gap). Ready
-  otherwise. Coverage failed when no lockfile was assessed or OSV answered for no package; failed coverage is never
+  otherwise. Outdated (FR-004b): patch = listed only; minor or major = outdated; only a key package with a major gap
+  (including a minor on 0.x) changes the verdict, runtime or dev. Coverage failed when no lockfile was assessed or OSV answered for no package; failed coverage is never
   ready. Partial for anything not assessed or not checked.
 
 ## R9. Telegraph payment client (P2) — open approval
@@ -103,20 +104,46 @@ rationale, alternatives. "Verified" means run or measured on the date given.
   evidence type, change, excerpt, source id, migration; `sources[]`), not `assessment.ts` as the handoff says. Import
   it from `zod/v3` under zod 4.6. Unusable answers are dropped and counted against caps; `not_found` and unavailable are
   stated, never "no changes".
+- **Candidates** (FR-007): outdated direct runtime dependencies with a minor or major gap, key packages first.
+  Transitive and dev-only packages are never bought, even when they match a key-package pattern.
+- **No TypeScript/Rust ordering**: the schema's changes carry kind, version, evidence type, change, excerpt, source
+  and migration, but no field for the affected client. Changes are shown in the miner's order; the report does not
+  infer applicability from wording. (The spec's earlier "TypeScript before Rust" promise was removed, 25 Nov.)
 
-## R11. Purchase record and attempt states (P2)
+## R11. Purchase record, lease and attempt states (P2)
 
 - **Decision**: copy the PR Agent's ledger states (`bot/src/ledger.ts`): reserved → request_sent → delivered /
   failed_* / unknown_needs_reconciliation. The spec's **pending** maps to reserved and request_sent, **unknown** to
-  request_sent and unknown_needs_reconciliation. Key = package + exact from + exact to. Written to a `preflight`
-  branch through the GitHub API (`contents: write`); the workflow's `concurrency` group prevents overlapping runs.
+  request_sent and unknown_needs_reconciliation. Key = package + exact from + exact to; a delivered answer is reused
+  whatever miner is configured now, and its record keeps the miner that answered. Written to a `preflight` branch
+  through the GitHub API (`contents: write`).
+- **Atomic writes**: each write creates a commit on top of the branch head the run last read, then moves the branch
+  with the GraphQL `updateRefs` mutation, `beforeOid` = that head and `afterOid` = the new commit. GitHub refuses the
+  update if the branch moved. Not REST `PATCH /git/refs` with `force: false`: it only guarantees a fast-forward, not
+  an exact expected head.
+- **Lease** (run-level, approved 25 Nov): before any paid processing the run writes `lease.json` (`token`, `runId`,
+  `acquiredAt`, `expiresAt`) by compare-and-swap. The lease is taken only when absent or expired. Every later record
+  write checks that `lease.json` at the head still holds the run's token. The run stops buying before `expiresAt`
+  and releases the lease at the end. Expiry is longer than the job's `timeout-minutes`, which the installer workflow
+  sets.
+- **Expired lease**: a run may take over an expired lease (compare-and-swap). Before paying, it reconciles the
+  previous holder's attempts: any `reserved` or `request_sent` attempt becomes `unknown_needs_reconciliation` and is
+  not bought again until a person resolves it.
+- **Ambiguous write** (the `updateRefs` response is lost): re-read the branch. If the head is the run's commit,
+  continue. Otherwise, or if the read fails, stop buying for this run.
+- **No record, no purchase** (FR-009b): no wallet, a failed `reserved` write or a lease that isn't held means free mode,
+  with the reason in the report. Fork PRs never reach this path (no secrets).
+- **Workflow `concurrency`**: still recommended (one group per repository), but the lease protects purchases on its
+  own. The `updateRefs` behaviour is verified against the live API in T023 before the first paid run.
 
 ## R12. Pull request comment (P3)
 
 - **Decision**: one comment found by a hidden marker and updated in place, condensed: base and head verdicts and
-  coverage, resolved / open / new counts, the blocked and review findings with member and package (truncated with an
+  coverage, resolved / open / new / unverified counts, the blocked and review findings with member and package (truncated with an
   omitted count), and a link to the full job summary. Fork PRs: summary only.
 - **Rationale**: full reports are 30–80 KB (24 Nov runs); GitHub's comment limit is 65,536 characters.
+- **Unverified** (FR-013): a base finding becomes `resolved` only when the head lockfile was parsed and the package's
+  lookup completed; otherwise `unverified`. Outdated findings are compared by member + package + `outdated`.
 
 ## R13. Demo repositories
 

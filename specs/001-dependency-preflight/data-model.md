@@ -42,7 +42,9 @@ runtime = reachable from its runtime declarations (see research R3).
 ### `NotAssessedDependency`
 
 `{ name, source, reason, lockfile, usages }`. Reasons: Git dependency; local path dependency; URL dependency;
-package identity could not be verified; declared in the manifest but not found in the lockfile. Shown as "not
+unresolved workspace reference; package identity could not be verified; declared in the manifest but not found in
+the lockfile. A workspace reference that resolves to a member is not listed here: that member is assessed through its
+own dependencies. Shown as "not
 checked"; a runtime one makes the verdict at least review; any makes coverage partial.
 
 ## Advisory data → `AdvisoryGroup`, `AdvisoryCheck` [built] (`src/osv.ts`)
@@ -81,12 +83,16 @@ checked"; a runtime one makes the verdict at least review; any makes coverage pa
 
 ### `OutdatedFinding`
 
-`{ package, key, runtime, latest, gap }` for direct dependencies behind the latest stable release.
+`{ package, key, runtime, latest, gap }` for direct dependencies behind the latest stable release. `patch` = listed
+only; `minor`/`major` = outdated; only `key` with `major` makes the verdict review (FR-004b). Paid explanation
+candidates (P2): `runtime` and `minor`/`major`.
 
 ### `NotChecked`
 
 `{ name, version?, lockfile, runtime, unreachable, reason }`: OSV lookups that didn't complete, and not-assessed
-dependencies.
+dependencies. **Planned (T034)**: split into `notAssessed` (outside the supported scope or identity not verifiable:
+Git, local path, URL, unresolved workspace reference, unsupported lockfile) and `notChecked` (a lookup that should
+have completed but failed: OSV or registry timeout or outage), each with its own report section.
 
 ## Report → `Assessment` [built]
 
@@ -109,9 +115,11 @@ the verdict.
 
 ## Upgrade explanation [P2]
 
-From a validated miner answer (research R10): `{ package, from, to, outcome: found | not_found | unavailable | unusable,
-changes: { kind: breaking | deprecation | security_fix, version, change, migration?, quote, sourceUrl }[], purchase? }`.
-TypeScript-client changes are listed before Rust-only ones. Only validated answers are shown.
+From a validated miner answer (research R10): `{ package, from, to, minerId, outcome: found | not_found | unavailable |
+unusable, changes: { kind: breaking | deprecation | security_fix, version, evidenceType, change, migration?, quote,
+sourceUrl }[], purchase? }`. Changes are shown in the miner's order: the answer schema has no field saying whether a
+change affects TypeScript or Rust, so the report does not infer it. Only validated answers are shown. `minerId` is the
+miner that answered; a delivered answer is reused under a later miner configuration.
 
 ## Purchase and attempt [P2]
 
@@ -129,10 +137,30 @@ reserved ──► quote_refused
 
 Spec mapping: **pending** = reserved, request_sent; **delivered**; **unknown** = request_sent (stale),
 unknown_needs_reconciliation. A key with a pending or unknown attempt is never bought again until reconciled; a
-delivered key is reused.
+delivered key is reused (whatever miner is configured now). No purchase without a durably written `reserved` record
+and a held lease (FR-009b).
+
+## Lease [P2]
+
+`{ token, runId, acquiredAt, expiresAt }` in `lease.json` on the `preflight` branch (research R11). Held by at most one
+run; every record write is a compare-and-swap of the branch head that requires the current token.
+
+```text
+free ──acquire (CAS)──► held ──release (CAS)──► free
+                         │
+                         └── expiresAt passed ──► expired ──acquire by another run (CAS, after reconciliation)──► held
+```
 
 ## Comparison [P3]
 
-Finding identity: workspace member + package + advisory group (dependency paths are context only). Status per
-finding: `resolved` (base only), `open` (both), `new` (head only). The comment shows base and head verdicts and
-coverage.
+Finding identity: advisory finding = workspace member + package + advisory group; outdated finding = workspace
+member + package + `outdated` (exact versions and dependency paths are context only). Status per finding:
+
+| Status | Rule |
+| --- | --- |
+| `resolved` | base only, and on the head the lockfile was parsed and the package's lookup completed (OSV for advisories, registry for outdated) |
+| `unverified` | base only, but on the head the lockfile failed or was not assessed, or the lookup did not complete |
+| `open` | base and head |
+| `new` | head only |
+
+A failed check never resolves a finding. The comment shows base and head verdicts and coverage.

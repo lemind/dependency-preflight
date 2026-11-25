@@ -25,7 +25,7 @@ The Action's public interface: `action.yml` inputs and outputs, environment, exi
 | `GITHUB_REPOSITORY`, `GITHUB_SHA` | built | shown in the report |
 | `GITHUB_STEP_SUMMARY` | built | report destination (stdout when absent) |
 | `TELEGRAPH_EVM_PRIVATE_KEY` | P2 | optional wallet; absent means free mode (FR-011). Never logged |
-| `GITHUB_TOKEN` | P2/P3 | record writes (`contents: write`), PR comment (`pull-requests: write`) |
+| `GITHUB_TOKEN` | P2/P3 | record and lease writes (`contents: write`), PR comment (`pull-requests: write`). Without a writable record no purchase is made (FR-009b) |
 
 ## Outputs
 
@@ -48,25 +48,29 @@ Markdown in the job summary, in this order:
 2. What was assessed (path, repository, commit, UTC time) and the positioning line: an npm dependency assessment, not
    a security audit; only lockfiles and manifests were read.
 3. Totals: lockfiles assessed (format, members), locked versions, versions with advisories (malicious count), not
-   checked.
+   assessed, not checked.
 4. "Why blocked", "Why review" / "Also needs review", "Why coverage is …".
 5. Findings by tier: malicious; direct runtime; transitive runtime. Each row: package (🔑 for key packages, alias or
    override), locked version, lockfile and members (direct marked), advisories (ids linked to osv.dev, aliases,
    severity or "malicious", publication date, summary), fixed-in version, notes (removed from the registry).
 6. Outdated key packages: locked, latest, gap, runtime/dev, where, link to the versions page.
-7. Collapsed: dev-only advisories; advisories in unreachable lock entries; other outdated direct dependencies;
-   not checked or not assessed items; the verdict rules.
+7. Collapsed: dev-only advisories; advisories in unreachable lock entries; other outdated direct dependencies (patch
+   gaps listed only); not assessed items (outside scope or identity not verifiable) and, separately, not checked items
+   (a lookup failed; planned split, T034); the verdict rules.
 
 Tables are capped at 50 rows with a "… N more" line. Text from lockfiles and advisories is escaped for table cells.
 
-**[P2]** adds an explanations section (per package: breaking changes and deprecations with migration, quote and link;
-`not_found` or unavailable stated) and a purchases section (miner, price, receipt, signal), plus skipped candidates
-with reasons. **[P3]** adds the base/head comparison and posts a condensed comment (see research R12).
+**[P2]** adds an explanations section (per package: breaking changes and deprecations with migration, quote and link,
+in the miner's order; `not_found` or unavailable stated) and a purchases section (miner, price, receipt, signal), plus
+skipped candidates with reasons, and the reason when paid explanations were skipped (no wallet, record not writable,
+lease not held). **[P3]** adds the base/head comparison (resolved, open, new, unverified) and posts a condensed
+comment (see research R12).
 
 ## Workflow requirements (for installers)
 
 - Triggers `push`, `pull_request`, `workflow_dispatch`; never `pull_request_target`.
 - `actions/checkout` with `persist-credentials: false`; no `npm install` or repository script in the job.
 - Permissions: `contents: read` for P1. P2 adds `contents: write` (record); P3 adds `pull-requests: write` (comment).
-- P2: a `concurrency` group per repository so runs don't overlap.
+- P2: a `concurrency` group per repository and a job `timeout-minutes` shorter than the lease expiry. The lease on
+  the `preflight` branch protects purchases even without them (research R11).
 - Pull requests from forks get no secrets: free mode, summary only.
