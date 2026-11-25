@@ -52,6 +52,8 @@ export type Assessment = {
   advisories: AdvisoryFinding[];
   outdated: OutdatedFinding[];
   notChecked: NotChecked[];
+  /** Direct dependencies whose latest release could not be looked up (registry errors). */
+  latestUnknown: string[];
   discovery: Discovery;
   lockedVersionCount: number;
 };
@@ -228,6 +230,7 @@ export const decide = (
     advisories: rankAdvisories(advisories),
     outdated,
     notChecked,
+    latestUnknown: registryFailures.map((failure) => failure.slice(0, failure.indexOf(": "))),
     discovery,
     lockedVersionCount: new Set(packages.map(packageKey)).size,
   };

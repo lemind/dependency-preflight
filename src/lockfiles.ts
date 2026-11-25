@@ -82,6 +82,28 @@ const OTHER_ECOSYSTEMS: Record<string, string> = {
   "composer.lock": "PHP",
 };
 
+/**
+ * Whether discovery reads a file at this repository path: lockfiles, manifests and other ecosystems' dependency files
+ * outside skipped directories. Used to fetch only these files of a pull request's base (src/base.ts).
+ */
+export const isDependencyFile = (path: string): boolean => {
+  const parts = path.split("/");
+  if (parts.length - 1 > MAX_DEPTH || parts.slice(0, -1).some((part) => SKIPPED_DIRECTORIES.has(part))) return false;
+  const filename = parts[parts.length - 1];
+  return (
+    filename === "package.json" ||
+    filename === "pnpm-lock.yaml" ||
+    filename === "yarn.lock" ||
+    NPM_LOCKFILES.has(filename) ||
+    filename in UNSUPPORTED_LOCKFILES ||
+    filename in OTHER_ECOSYSTEMS
+  );
+};
+
+/** Largest file discovery reads, by name. */
+export const maxDependencyFileBytes = (path: string): number =>
+  path.endsWith("package.json") ? MAX_MANIFEST_BYTES : MAX_LOCKFILE_BYTES;
+
 type Manifest = {
   name?: string;
   workspaces?: string[] | { packages?: string[] };
