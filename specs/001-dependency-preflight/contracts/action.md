@@ -2,7 +2,7 @@
 
 The Action's public interface: `action.yml` inputs and outputs, environment, exit behaviour and the report.
 **built** items exist on PR #2; **P2 built** is in `action.yml` and tested offline, not yet run with a wallet (T025);
-**P3** is planned and not in `action.yml` yet.
+**P3 built** (the pull request re-check) is tested offline and in a local run, not yet on a pull request.
 
 ## Inputs
 
@@ -70,8 +70,10 @@ Tables are capped at 50 rows with a "… N more" line. Text from lockfiles and a
 breaking first, then deprecations and security fixes, oldest version first; a warning for any vulnerability the
 miner says the target version introduces; `not_found`, unavailable or unusable stated) and a purchases section (miner, price, receipt, signal), plus
 skipped candidates with reasons, and the reason when paid explanations were skipped (no wallet, record not writable,
-lease not held). **[P3]** adds the base/head comparison (resolved, open, new, unverified) and posts a condensed
-comment (see research R12).
+lease not held). **[P3 built]** on a `pull_request` event puts the base/head re-check (verdicts, coverage, resolved / open / new /
+not verified counts, the findings that affect the verdict) at the top of the summary and posts or updates one comment
+per path (see research R12). A base that can't be assessed is stated; forks and a token without
+`pull-requests: write` get the summary only.
 
 ## Workflow requirements (for installers)
 

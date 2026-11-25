@@ -14,6 +14,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  pull-requests: write   # optional: the re-check comment on pull requests (P3)
 jobs:
   preflight:
     runs-on: ubuntu-latest

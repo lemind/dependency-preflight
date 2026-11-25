@@ -24,6 +24,8 @@ export type ComparedFinding = {
   severity?: Severity;
   malicious: boolean;
   key: boolean;
+  /** Outdated findings: the gap to the latest release (only a major gap on a key package affects the verdict). */
+  gap?: "major" | "minor" | "patch";
   status: FindingStatus;
   /** Why a base finding couldn't be confirmed as resolved. */
   reason?: string;
@@ -70,6 +72,7 @@ const entries = (assessment: Assessment): Entry[] => {
         ids: [],
         malicious: false,
         key: finding.key,
+        gap: finding.gap,
       });
   return list;
 };

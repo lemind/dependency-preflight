@@ -1,8 +1,11 @@
-import { realpathSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import * as core from "@actions/core";
 import { randomUUID } from "node:crypto";
 import { assess } from "./assess.js";
+import { fetchBaseFiles } from "./base.js";
+import { renderComment, upsertComment } from "./comment.js";
+import { compare, type Comparison } from "./compare.js";
 import { selectCandidates, type CandidateSelection } from "./explain.js";
 import { explainUpgrades, freeUpgrades, type UpgradeResult } from "./purchase.js";
 import { githubApi, PurchaseRecord } from "./record.js";
@@ -67,6 +70,51 @@ const upgrades = async (selection: CandidateSelection): Promise<UpgradeResult> =
   return result;
 };
 
+type PullRequest = { number: number; baseSha: string; fromFork: boolean };
+
+/** The pull request this run is for: only the `pull_request` event (never `pull_request_target`). */
+const pullRequest = (): PullRequest | undefined => {
+  if (process.env.GITHUB_EVENT_NAME !== "pull_request" || !process.env.GITHUB_EVENT_PATH) return undefined;
+  const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")) as {
+    pull_request?: { number: number; base: { sha: string; repo: { full_name: string } }; head: { repo: { full_name: string } | null } };
+  };
+  const pr = event.pull_request;
+  if (!pr) return undefined;
+  return { number: pr.number, baseSha: pr.base.sha, fromFork: pr.head.repo?.full_name !== pr.base.repo.full_name };
+};
+
+/**
+ * P3: compares the pull request with its base (fetched through the API, never checked out or run) and posts or
+ * updates one comment. Returns the re-check to put at the top of the job summary. A base that can't be assessed or
+ * a comment that can't be posted is stated, not fatal: the head's own verdict still decides the step.
+ */
+const recheck = async (pr: PullRequest, head: Assessment, keyPackages: string[], path: string): Promise<string> => {
+  const repository = process.env.GITHUB_REPOSITORY;
+  const token = core.getInput("github-token");
+  if (!repository || !token) throw new Error("a pull request re-check needs GITHUB_REPOSITORY and github-token");
+  core.setSecret(token);
+  let comparison: Comparison | undefined;
+  let baseError: string | undefined;
+  try {
+    const baseRoot = await fetchBaseFiles(fetch, { repository, token, apiUrl: process.env.GITHUB_API_URL }, pr.baseSha, path);
+    const base = await assess(path === "." ? baseRoot : join(baseRoot, ...path.split("/")), keyPackages, fetch, path);
+    comparison = compare(base, head);
+  } catch (error) {
+    baseError = (error instanceof Error ? error.message : String(error)).slice(0, 300);
+    core.warning(`Base branch not assessed: ${baseError}`);
+  }
+  const runUrl = process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}` : undefined;
+  const body = renderComment(comparison, head, { path, runUrl, ...(baseError ? { baseError } : {}) });
+  if (pr.fromFork) core.info("Pull request from a fork: the re-check is in the run summary only, no comment.");
+  else
+    try {
+      core.info(`Re-check comment: ${await upsertComment(fetch, { repository, token, apiUrl: process.env.GITHUB_API_URL, pullNumber: pr.number }, body)}`);
+    } catch (error) {
+      core.warning(`Re-check comment not posted (needs pull-requests: write): ${error instanceof Error ? error.message : String(error)}`);
+    }
+  return body;
+};
+
 const shouldFail = (assessment: Assessment, failOn: string): boolean =>
   assessment.coverage === "failed" || assessment.verdict === "blocked" || (failOn === "review" && assessment.verdict === "review");
 
@@ -94,8 +142,10 @@ const run = async () => {
     upgrades: upgradeResult,
   });
 
-  if (process.env.GITHUB_STEP_SUMMARY) await core.summary.addRaw(report).write();
-  else process.stdout.write(report);
+  const pr = pullRequest();
+  const summary = pr ? `${await recheck(pr, assessment, keyPackages, path)}\n---\n\n${report}` : report;
+  if (process.env.GITHUB_STEP_SUMMARY) await core.summary.addRaw(summary).write();
+  else process.stdout.write(summary);
   core.setOutput("verdict", assessment.verdict);
   core.setOutput("coverage", assessment.coverage);
   core.setOutput("spent-usdc", upgradeResult.spentUsdc.toFixed(2));

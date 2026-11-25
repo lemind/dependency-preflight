@@ -16,7 +16,7 @@ inputs:
   case-label:
     description: "Optional label shown at the top of the report, e.g. for a historical or controlled test case"
   github-token:
-    description: "Token that writes the purchase record to the preflight branch (needs contents: write). Without write access nothing is bought."
+    description: "Token for the purchase record (contents: write; without it nothing is bought) and, on pull requests, to read the base and post the re-check comment (pull-requests: write)"
     default: "${{ github.token }}"
   miner-id:
     description: "Telegraph miner asked for upgrade explanations (the only one asked)"
