@@ -97,7 +97,7 @@ rationale, alternatives. "Verified" means run or measured on the date given.
 - **Decision** (approved 25 Nov): (a), pinned exactly at 2.32.0, not the PR Agent's 2.28.0: 2.28.0 depends on
   zod ^3.24.2, affected by GHSA-mrhx-c7xc-m3w5 (memory exhaustion, fixed in 4.6.6) and not fixable by an override;
   2.32.0 depends on zod ^4.6.6 and shares our zod 4.6.7. `npm audit`: 0 vulnerabilities. Installed with
-  `--ignore-scripts`. T020 checks that the copied client compiles and behaves the same on 2.32.0.
+  `--ignore-scripts`. Checked in T020 (25 Nov): the copied client compiles, and its 38 tests pass on 2.32.0.
 
 ## R10. Miner answers (P2)
 

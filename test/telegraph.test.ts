@@ -206,7 +206,7 @@ describe("IntelligenceClient.buy", () => {
 
   it("buys nothing when the configured miner is not listed for the intent", async () => {
     const { client, paymentFetch } = makeClient({ preferredMinerId: "999" });
-    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toThrow(/miner 999 is not listed/);
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toThrow(/miner 999 is not listed by the node with an endpoint/);
     expect(paymentFetch).not.toHaveBeenCalled();
   });
 
@@ -419,6 +419,29 @@ describe("IntelligenceClient.buy attempt stages", () => {
     await expect(client.buy("QUESTION_ANSWERING", "x", rec.onAttempt)).rejects.toBeInstanceOf(PaymentUnknownError);
     expect(rec.states()).toEqual(["reserved", "request_sent", "unknown_needs_reconciliation"]);
     expect(paymentFetch).toHaveBeenCalledTimes(1); // no second miner
+    expect(client.spentUsdc).toBeCloseTo(0.05); // the worst case counts against the budget
+  });
+
+  // Added in this repository (review, 25 Nov): a paid answer that can't be read is never a delivered purchase.
+  it("stops for reconciliation, with the receipt and the spend counted, when a paid answer is not JSON", async () => {
+    const rec = recorder();
+    const paymentFetch = vi.fn(async () => {
+      const ok = engine200();
+      return new Response("<html>truncated", { status: 200, headers: ok.headers });
+    });
+    const { client } = makeClient({ paymentFetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x", rec.onAttempt)).rejects.toBeInstanceOf(PaymentUnknownError);
+    expect(rec.states()).toEqual(["reserved", "request_sent", "unknown_needs_reconciliation"]);
+    expect(rec.events[2].reason).toMatch(/receipt 0xreceipt.*not JSON/);
+    expect(client.spentUsdc).toBeCloseTo(0.01);
+    expect(paymentFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts the worst case when an answer has no readable settlement proof", async () => {
+    const paymentFetch = vi.fn(async () => engine200({}, { "payment-response": "" }));
+    const { client } = makeClient({ paymentFetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toBeInstanceOf(PaymentUnknownError);
+    expect(client.spentUsdc).toBeCloseTo(0.05);
   });
 
   it("records quote_refused with the quote and reason when the price limit refuses it", async () => {
@@ -566,6 +589,27 @@ describe("IntelligenceClient.buy via Telegraph escrow", () => {
     const { client } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
     await expect(client.buy("QUESTION_ANSWERING", "x", async (e) => void rec.push(e))).rejects.toBeInstanceOf(PaymentUnknownError);
     expect(rec.at(-1)?.state).toBe("unknown_needs_reconciliation");
+    expect(client.spentUsdc).toBeCloseTo(0.02); // the signed amount counts against the budget
+  });
+
+  it("counts the quote, not zero, when the escrow receipt's amount is null or empty", async () => {
+    for (const amount of [null, ""]) {
+      const fetchImpl = escrowFetch(() => answered({ ...escrowReceipt, amount_uusdc: amount }));
+      const { client } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+      const p = await client.buy("QUESTION_ANSWERING", "x");
+      expect(p.amountUsdc).toBeCloseTo(0.02);
+      expect(client.spentUsdc).toBeCloseTo(0.02);
+    }
+  });
+
+  it("stops for reconciliation when a paid escrow answer has no result", async () => {
+    const rec: AttemptEvent[] = [];
+    const fetchImpl = escrowFetch(() =>
+      new Response(JSON.stringify({ miner_id: "148002" }), { status: 200, headers: { "x-payment-response": b64(escrowReceipt) } }));
+    const { client } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x", async (e) => void rec.push(e))).rejects.toBeInstanceOf(PaymentUnknownError);
+    expect(rec.at(-1)).toMatchObject({ state: "unknown_needs_reconciliation", reason: expect.stringMatching(/0xescrowreceipt.*no result/) });
+    expect(client.spentUsdc).toBeCloseTo(0.02);
   });
 
   it("records request_sent before the signed request goes out", async () => {

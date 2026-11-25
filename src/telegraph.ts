@@ -86,7 +86,7 @@ export interface IntelligenceClientDeps {
   usdcAddress: string;
   maxPricePerCallUsdc: number;
   budgetCapUsdc: number;
-  /** Tried before the leaderboard when the node lists it for the intent (SPEC §2.4 manual policy). */
+  /** The only miner asked when set (FR-007); the node must list it with an endpoint for the intent. */
   preferredMinerId?: string | null;
   fetchImpl?: typeof fetch;
   paymentFetch?: (
@@ -239,6 +239,13 @@ function settleHeader(
   );
 }
 
+/** The charged amount from a receipt, in USDC; the quote when the receipt gives no usable number. */
+function settledUsdc(raw: string | number | undefined | null, quotedUsdc: number): number {
+  const atomic =
+    typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : NaN;
+  return Number.isFinite(atomic) && atomic >= 0 ? atomic / USDC_DECIMALS : quotedUsdc;
+}
+
 function answerText(result: unknown): string {
   if (typeof result === "string") return result;
   const a = (result as { answer?: unknown } | null)?.answer;
@@ -377,8 +384,9 @@ export class IntelligenceClient {
 
   // The routed /engine/v1/ask re-classifies a free-form query and can ignore
   // the intent we name (seen live: QA routed to SECURITY_REVIEW). So we read
-  // Telegraph's leaderboard ourselves and pay the top-ranked miner directly,
-  // stepping down a rank only when a call fails (failed calls are credited to escrow).
+  // Telegraph's leaderboard ourselves and pay the miner directly. With a configured
+  // miner, only that miner is asked; without one, the top-ranked miners are tried in
+  // turn, stepping down only when a call fails (failed calls are credited to escrow).
   // onAttempt is awaited at each stage, so a stage that can't be recorded stops
   // the purchase before the next one starts.
   async buy(
@@ -392,7 +400,7 @@ export class IntelligenceClient {
       ? listed.filter((miner) => miner.id === this.preferredMinerId)
       : listed.slice(0, MAX_MINERS_TRIED);
     if (this.preferredMinerId && miners.length === 0)
-      throw new AskFailedError(`${intent}: miner ${this.preferredMinerId} is not listed by the node`);
+      throw new AskFailedError(`${intent}: miner ${this.preferredMinerId} is not listed by the node with an endpoint for this intent`);
     const failures: string[] = [];
     for (const miner of miners) {
       try {
@@ -410,7 +418,7 @@ export class IntelligenceClient {
       }
     }
     throw new AskFailedError(
-      `${intent}: no ranked miner answered — ${failures.join(" | ") || "none ranked"}`,
+      `${intent}: no miner answered — ${failures.join(" | ") || "no miner listed for the intent"}`,
     );
   }
 
@@ -475,7 +483,7 @@ export class IntelligenceClient {
     }
 
     // Signed before request_sent: signing moves no money, and a malformed challenge
-    // then fails over to the next miner like a missing payment option.
+    // then fails like a missing payment option (no money moved).
     const escrowHeader =
       escrow === null ? null : await escrowPayment(this.account, escrow);
     await onAttempt({
@@ -496,7 +504,8 @@ export class IntelligenceClient {
               },
             });
     } catch (err) {
-      // No response: the payment may or may not have settled.
+      // No response: the payment may or may not have settled, so count the worst case.
+      this.spentUsdc += worstCaseUsdc;
       const reason = `no response: ${String(err)}`.slice(0, 300);
       await onAttempt({
         state: "unknown_needs_reconciliation",
@@ -511,7 +520,7 @@ export class IntelligenceClient {
     // fails, the amount is credited to our escrow balance and never charged.
     if (!res.ok) {
       const reason =
-        `HTTP ${res.status} ${(await res.text().catch(() => "")).slice(0, 300)}`.trim();
+        `HTTP ${res.status} ${(await res.text().catch((err) => `(body unreadable: ${String(err)})`)).slice(0, 300)}`.trim();
       const notPaid =
         res.status === 402 ||
         (res.status === 400 && /invalid payment/i.test(reason));
@@ -538,7 +547,8 @@ export class IntelligenceClient {
       throw new AskFailedError(reason);
     }
     if (settle?.success !== true || typeof settle.transaction !== "string") {
-      // No readable settlement proof: we can't tell whether we paid.
+      // No readable settlement proof: we can't tell whether we paid, so count the worst case.
+      this.spentUsdc += worstCaseUsdc;
       const reason = "answered without a readable settlement proof";
       await onAttempt({
         state: "unknown_needs_reconciliation",
@@ -553,19 +563,10 @@ export class IntelligenceClient {
       receipt_hash?: string;
       amount_uusdc?: string | number;
     }>(res.headers.get("x-telegraph-receipt"));
-    const rawSettled = receipt?.amount_uusdc;
-    const settledAtomic =
-      typeof rawSettled === "number"
-        ? rawSettled
-        : typeof rawSettled === "string" && rawSettled !== ""
-          ? Number(rawSettled)
-          : NaN;
-    const settledUsdc = Number.isFinite(settledAtomic)
-      ? settledAtomic / USDC_DECIMALS
-      : amountUsdc;
-    this.spentUsdc += settledUsdc;
+    const settled = settledUsdc(receipt?.amount_uusdc, amountUsdc);
+    this.spentUsdc += settled;
 
-    const body = (await res.json().catch(() => ({}))) as EngineAnswer;
+    const body = await this.paidAnswer(res, miner, receipt?.receipt_hash ?? "", onAttempt);
     return {
       intent,
       minerId: String(body.miner_id ?? miner.id),
@@ -573,7 +574,7 @@ export class IntelligenceClient {
       minerRank: miner.rank,
       minerScore: miner.score,
       selectedBy: miner.selectedBy,
-      amountUsdc: settledUsdc,
+      amountUsdc: settled,
       txHash: settle.transaction,
       receiptHash: receipt?.receipt_hash ?? "",
       signalHash: body.signal_hash ?? "",
@@ -585,6 +586,29 @@ export class IntelligenceClient {
       usdcContract: accept.asset,
       explorerBaseUrl: EXPLORERS[Number(accept.network.split(":")[1])] ?? "",
     };
+  }
+
+  // The body of a paid answer. Money has moved, so an unreadable body is never returned as a
+  // delivered answer: it stops for reconciliation, with the receipt in the reason.
+  private async paidAnswer(
+    res: Response,
+    miner: RankedMiner,
+    receiptHash: string,
+    onAttempt: OnAttempt,
+  ): Promise<EngineAnswer> {
+    let body: unknown;
+    let problem: string | null = null;
+    try {
+      body = await res.json();
+    } catch (err) {
+      problem = `not JSON: ${String(err)}`;
+    }
+    if (problem === null && (typeof body !== "object" || body === null || !("result" in body)))
+      problem = "no result";
+    if (problem === null) return body as EngineAnswer;
+    const reason = `paid (receipt ${receiptHash || "none"}), but the answer is unreadable: ${problem}`.slice(0, 300);
+    await onAttempt({ state: "unknown_needs_reconciliation", minerId: miner.id, reason });
+    throw new PaymentUnknownError(`${miner.id}: ${reason}`);
   }
 
   // An escrow answer carries its receipt in X-PAYMENT-RESPONSE (rail "escrow", receipt_hash,
@@ -604,7 +628,9 @@ export class IntelligenceClient {
       epoch_id?: number;
     }>(res.headers.get("x-payment-response"));
     if (receipt?.rail !== "escrow" || typeof receipt.receipt_hash !== "string") {
-      // No readable receipt: we can't tell whether the escrow was charged.
+      // No readable receipt: we can't tell whether the escrow was charged; an escrow
+      // signature authorises exactly the quoted amount, so count that.
+      this.spentUsdc += quotedUsdc;
       const reason = "answered without a readable escrow receipt";
       await onAttempt({
         state: "unknown_needs_reconciliation",
@@ -613,13 +639,10 @@ export class IntelligenceClient {
       });
       throw new PaymentUnknownError(`${miner.id}: ${reason}`);
     }
-    const charged = Number(receipt.amount_uusdc);
-    const amountUsdc = Number.isFinite(charged)
-      ? charged / USDC_DECIMALS
-      : quotedUsdc;
+    const amountUsdc = settledUsdc(receipt.amount_uusdc, quotedUsdc);
     this.spentUsdc += amountUsdc;
 
-    const body = (await res.json().catch(() => ({}))) as EngineAnswer;
+    const body = await this.paidAnswer(res, miner, receipt.receipt_hash, onAttempt);
     const chainId = Number(escrow.network.split(":")[1]);
     return {
       intent,
