@@ -62,7 +62,7 @@ Markdown in the job summary, in this order:
 6. Outdated key packages: locked, latest, gap, runtime/dev, where, link to the versions page.
 7. Collapsed: dev-only advisories; advisories in unreachable lock entries; other outdated direct dependencies (patch
    gaps listed only); not assessed items (outside scope or identity not verifiable) and, separately, not checked items
-   (a lookup failed; planned split, T034); the verdict rules.
+   (a lookup failed, a rerun may complete it), each with its own total (T034); the verdict rules.
 
 Tables are capped at 50 rows with a "… N more" line. Text from lockfiles and advisories is escaped for table cells.
 

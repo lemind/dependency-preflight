@@ -86,7 +86,7 @@ const unverifiedReason = (entry: Entry, head: Assessment): string | undefined =>
   const lockfile = head.discovery.lockfiles.find((report) => report.path === entry.lockfile);
   if (!lockfile) return `${entry.lockfile} is not in the head`;
   if (lockfile.status !== "assessed") return `${entry.lockfile} was not assessed on the head: ${lockfile.reason}`;
-  if (entry.kind === "advisory" && head.notChecked.some((item) => item.name === entry.name && item.lockfile === entry.lockfile && item.version !== undefined))
+  if (entry.kind === "advisory" && head.notChecked.some((item) => item.name === entry.name && item.lockfile === entry.lockfile))
     return `the advisory lookup for ${entry.name} did not complete on the head`;
   if (entry.kind === "outdated" && head.latestUnknown.includes(entry.name))
     return `the latest release of ${entry.name} could not be looked up on the head`;

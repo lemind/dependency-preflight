@@ -22,7 +22,7 @@ const assessedLockfile: LockfileReport = { status: "assessed", path: LOCKFILE, f
 
 const assessment = (overrides: Partial<Assessment> = {}): Assessment => ({
   verdict: "review", coverage: "complete", verdictReasons: { blocked: [], review: [] }, coverageReasons: [],
-  advisories: [], outdated: [], notChecked: [], latestUnknown: [], lockedVersionCount: 1,
+  advisories: [], outdated: [], notChecked: [], notAssessed: [], latestUnknown: [], lockedVersionCount: 1,
   discovery: { lockfiles: [assessedLockfile], otherDependencyFiles: [], manifestsWithoutLockfile: [] },
   ...overrides,
 });

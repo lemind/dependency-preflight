@@ -151,7 +151,7 @@ describe("explainUpgrades (T024, FR-007 to FR-011)", () => {
 describe("report section (T024)", () => {
   const assessment: Assessment = {
     verdict: "review", coverage: "complete", verdictReasons: { blocked: [], review: ["outdated key package"] }, coverageReasons: [],
-    advisories: [], outdated: [], notChecked: [], latestUnknown: [], lockedVersionCount: 1,
+    advisories: [], outdated: [], notChecked: [], notAssessed: [], latestUnknown: [], lockedVersionCount: 1,
     discovery: { lockfiles: [], otherDependencyFiles: [], manifestsWithoutLockfile: [] },
   };
   const render = (upgrades: Parameters<typeof renderReport>[1]["upgrades"]) =>
