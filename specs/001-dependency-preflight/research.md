@@ -143,7 +143,10 @@ rationale, alternatives. "Verified" means run or measured on the date given.
 - **No record, no purchase** (FR-009b): no wallet, a failed `reserved` write or a lease that isn't held means free mode,
   with the reason in the report. Fork PRs never reach this path (no secrets).
 - **Workflow `concurrency`**: still recommended (one group per repository), but the lease protects purchases on its
-  own. The `updateRefs` behaviour is verified against the live API in T023 before the first paid run.
+  own. **Verified 25 Nov** on the demo repository: create from all-zero `beforeOid` and a forward move from
+  the right head apply; a forward move with a stale `beforeOid`, a create of an existing branch and a backward move
+  are refused with the branch unchanged. Refusals come back as generic GraphQL errors ("Something went wrong", or
+  "rejecting non-fast forward update"), not a named conflict, so every error is resolved by re-reading the head.
 
 ## R12. Pull request comment (P3)
 
