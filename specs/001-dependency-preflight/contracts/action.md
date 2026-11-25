@@ -2,7 +2,7 @@
 
 The Action's public interface: `action.yml` inputs and outputs, environment, exit behaviour and the report.
 **built** items exist on PR #2; **P2 built** is in `action.yml` and tested offline, not yet run with a wallet (T025);
-**P3 built** (the pull request re-check) is tested offline and in a local run, not yet on a pull request.
+**P3 built** (the pull request re-check) ran on a real pull request on 25 Nov (T032).
 
 ## Inputs
 

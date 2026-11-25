@@ -20,5 +20,5 @@ miner 7314). Testnet only (Ethereum Sepolia test USDC).
 
 **Status:** in development. The free check (P1: lockfiles, OSV advisories, verdict and coverage, job summary, fail on
 blocked) works in offline tests and on a GitHub-hosted runner (25 Nov, three pinned Solana repositories:
-[run](https://github.com/lemind/dependency-preflight-hosted-check/actions/runs/45557722045)). Paid explanations (P2) are built and tested offline but have not been run with a wallet yet; the re-check on pull requests (P3) is built and tested offline but hasn't run on a pull request yet. Context, plan and tasks: [PROJECT.md](PROJECT.md). Spec:
+[run](https://github.com/lemind/dependency-preflight-hosted-check/actions/runs/45557722045)). Paid explanations (P2) are built and tested offline but have not been run with a wallet yet; the re-check on pull requests (P3) works on a real pull request ([controlled demo](https://github.com/lemind/preflight-demo-compromised/pull/1), 25 Nov). Context, plan and tasks: [PROJECT.md](PROJECT.md). Spec:
 [specs/001-dependency-preflight/spec.md](specs/001-dependency-preflight/spec.md).
