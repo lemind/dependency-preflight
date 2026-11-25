@@ -198,7 +198,8 @@ What works today (25 Nov 2026), each step run on GitHub-hosted runners:
 - **P2** (paid explanations, purchase record, receipts, reuse);
 - **P3** (pull request re-check and comment).
 
-Not done yet: an outside reproduction from this README.
+Not done yet: an outside reproduction from this README. Built and tested offline, but not yet in the pinned Action:
+separate "not assessed" and "not checked" sections in the report (T034).
 
 Context, plan and tasks: [PROJECT.md](PROJECT.md), [plan](specs/001-dependency-preflight/plan.md),
 [tasks](specs/001-dependency-preflight/tasks.md). Spec:

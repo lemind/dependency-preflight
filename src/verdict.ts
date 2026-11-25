@@ -245,7 +245,7 @@ export const decide = (
     outdated,
     notChecked,
     notAssessed,
-    latestUnknown: registryFailures.map((failure) => failure.slice(0, failure.indexOf(": "))),
+    latestUnknown: [...new Set(registryFailures.map((failure) => failure.slice(0, failure.indexOf(": "))))],
     discovery,
     lockedVersionCount: new Set(packages.map(packageKey)).size,
   };

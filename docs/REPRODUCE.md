@@ -11,6 +11,7 @@ unclear, write down what you tried and what you guessed.
 README to follow:
 <https://github.com/lemind/dependency-preflight/blob/002-p1-verdict-in-ci/README.md>
 (The work is on branch `002-p1-verdict-in-ci`, not yet merged to `main`.) Use only the README's **Free check** install.
+That README pins the Action at commit `98e6c7a`; that is the version under test.
 
 ## Rules
 
@@ -30,10 +31,21 @@ README to follow:
      report that you did this.
 3. Add the workflow file exactly as the README's "Free check" section shows. Commit it to the default branch.
 4. Open the **Actions** tab and wait for the run. Open the run's summary page.
-5. Make a pull request that changes one dependency version in `package.json` and `package-lock.json`. For example,
-   upgrade `@solana/web3.js` to its latest 1.x, or downgrade it to `1.95.6`, a known-malicious version. A downgrade
-   to 1.95.6 is expected to be **blocked**; your repository contains no code, so that is harmless. Browser only:
-   edit both files by hand. Wait for the run, then check the pull request for a comment from `github-actions`.
+5. On a new branch, add a dependency with a known high-severity advisory, `nanoid` 3.3.4, then open a pull request.
+   Your repository contains no code, so this is harmless.
+   - **With Node.js:** `npm install --package-lock-only --ignore-scripts nanoid@3.3.4`, then commit both files.
+   - **Browser only:** edit both files in the GitHub web editor:
+     - in `package.json`, add `"nanoid": "3.3.4"` under `"dependencies"`;
+     - in `package-lock.json`, add the same line under `"dependencies"` of the `""` entry (inside `"packages"`), and
+       add this entry inside `"packages"`:
+       ```json
+       "node_modules/nanoid": {
+         "version": "3.3.4",
+         "resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.4.tgz"
+       },
+       ```
+   Expected: the pull request's run is **blocked** (a high-severity advisory in a direct runtime dependency), and a
+   comment from `github-actions` lists `nanoid` as **new**. Wait for the run, then check the pull request.
 
 ## Report back
 

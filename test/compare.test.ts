@@ -100,6 +100,14 @@ describe("compare: identity", () => {
     ]);
   });
 
+  it("a package moved to a Git source on the head is not verified, not resolved", () => {
+    const base = assessment({ advisories: [advisory("nanoid", "3.3.4", group("GHSA-mwcw-c2x4-8c55"))] });
+    const head = assessment({
+      notAssessed: [{ name: "nanoid", source: "git+https://github.com/ai/nanoid.git#abc", lockfile: LOCKFILE, runtime: true, unreachable: false, reason: "Git dependency" }],
+    });
+    expect(statuses(base, head)).toEqual(["unverified advisory nanoid (nanoid is not assessed on the head: Git dependency)"]);
+  });
+
   it("a lockfile removed on the head can't resolve its findings", () => {
     const base = assessment({ advisories: [advisory("nanoid", "3.3.4", group("GHSA-mwcw-c2x4-8c55"))] });
     expect(statuses(base, assessment({ discovery: { lockfiles: [], otherDependencyFiles: [], manifestsWithoutLockfile: [] } }))).toEqual([

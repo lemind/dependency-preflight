@@ -86,6 +86,9 @@ const unverifiedReason = (entry: Entry, head: Assessment): string | undefined =>
   const lockfile = head.discovery.lockfiles.find((report) => report.path === entry.lockfile);
   if (!lockfile) return `${entry.lockfile} is not in the head`;
   if (lockfile.status !== "assessed") return `${entry.lockfile} was not assessed on the head: ${lockfile.reason}`;
+  // Moved to Git, a path, a URL or an unverifiable entry: gone from the findings because it wasn't looked up.
+  const unassessed = head.notAssessed.find((item) => item.name === entry.name && item.lockfile === entry.lockfile);
+  if (unassessed) return `${entry.name} is not assessed on the head: ${unassessed.reason}`;
   if (entry.kind === "advisory" && head.notChecked.some((item) => item.name === entry.name && item.lockfile === entry.lockfile))
     return `the advisory lookup for ${entry.name} did not complete on the head`;
   if (entry.kind === "outdated" && head.latestUnknown.includes(entry.name))

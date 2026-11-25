@@ -133,9 +133,27 @@ describe("partial and failed coverage are never an empty clean report", () => {
       expect.arrayContaining(["1 runtime dependency could not be checked", "1 runtime dependency not assessed (Git, local path or unverifiable source)"]),
     );
     const outageReport = render(outage);
-    expect(outageReport).toContain("<summary>Not checked (2): a lookup failed; a rerun may complete it</summary>");
-    expect(outageReport).toContain("- `@solana/web3.js@1.95.8` in `package-lock.json` (runtime):");
-    expect(outageReport).toContain("- `@solana/web3.js`: the latest release could not be looked up");
+    // One package, both lookups failed: one line, counted once.
+    expect(outageReport).toContain("| Not checked (a lookup failed) | 1 |");
+    expect(outageReport).toContain("<summary>Not checked (1): a lookup failed; a rerun may complete it</summary>");
+    expect(outageReport).toMatch(/- `@solana\/web3\.js@1\.95\.8` in `package-lock\.json` \(runtime\): .*; the latest release could not be looked up either/);
+  });
+
+  it("a lockfile source can't break out of its report line", async () => {
+    const hostile = "git+ssh://x\n\n</details>\n\n![t](https://evil.example/x.png)";
+    const root = writeTree({
+      "package.json": { dependencies: { safe: "github:someone/safe#main" } },
+      "package-lock.json": {
+        lockfileVersion: 3,
+        packages: { "": { dependencies: { safe: "github:someone/safe#main" } }, "node_modules/safe": { version: "1.0.0", resolved: hostile } },
+      },
+    });
+    const report = renderReport(await assess(root, DEFAULT_KEY_PACKAGES, replayFetcher(controlled, web3Registry)), {
+      path: ".", ranAt: new Date(), keyPackages: DEFAULT_KEY_PACKAGES,
+    });
+    const line = report.split("\n").find((candidate) => candidate.startsWith("- `safe`"));
+    expect(line).toContain("git+ssh://x &lt;/details> ![t]");
+    expect(report.match(/<\/details>/g)).toHaveLength(report.match(/<details>/g)!.length);
   });
 
   it("advisory details that can't be retrieved: still malicious by id, coverage partial", async () => {
