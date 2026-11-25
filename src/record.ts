@@ -62,17 +62,28 @@ export class LeaseHeldError extends Error {}
 /** The branch moved under this run, or this run's lease is gone: stop buying, never retry. */
 export class LeaseLostError extends Error {}
 
+/** A commit and its tree: knowing the tree saves a request on every write. */
+export type Head = { oid: string; treeOid: string };
+
 /** The few GitHub calls the record needs, so tests can replace them. */
 export type GitHubApi = {
-  /** The branch head and both files at it, or null when the branch doesn't exist. */
-  readBranch: () => Promise<{ headOid: string; ledger: string; lease: string | null } | null>;
-  /** A new commit with these files, on top of `parentOid` (none: the first commit of the branch). */
-  commitFiles: (parentOid: string | null, files: Record<string, string>, message: string) => Promise<string>;
+  /** The branch head (commit and tree) and both files at it, or null when the branch doesn't exist. */
+  readBranch: () => Promise<{ head: Head; ledger: string; lease: string | null } | null>;
+  /** A new commit with these files, on top of `parent` (null: the first commit of the branch). */
+  commitFiles: (parent: Head | null, files: Record<string, string>, message: string) => Promise<Head>;
   /** Moves the branch from exactly `beforeOid` (all zeros: create it) to `afterOid`; throws if it moved. */
   moveBranch: (beforeOid: string, afterOid: string) => Promise<void>;
 };
 
 const OPEN_STATES: ReadonlySet<AttemptState> = new Set(["reserved", "request_sent", "unknown_needs_reconciliation"]);
+const ATTEMPT_STATES: ReadonlySet<AttemptState> = new Set([
+  ...OPEN_STATES,
+  "quote_refused",
+  "delivered",
+  "failed_and_credited",
+  "failed_not_charged",
+  "failed_and_charged",
+]);
 
 /** Parses the ledger. A malformed line is an error, never skipped: a lost row could mean buying twice. */
 export const parseLedger = (text: string): AttemptRow[] =>
@@ -86,9 +97,20 @@ export const parseLedger = (text: string): AttemptRow[] =>
       } catch (error) {
         throw new Error(`${LEDGER_FILE} line ${index + 1} is not JSON: ${String(error)}`);
       }
-      const attempt = row as Partial<AttemptRow>;
-      if (attempt?.kind !== "attempt" || typeof attempt.attemptId !== "string" || typeof attempt.key?.name !== "string")
-        throw new Error(`${LEDGER_FILE} line ${index + 1} is not an attempt row`);
+      const attempt = row as Partial<AttemptRow> | null;
+      const problem =
+        attempt?.kind !== "attempt"
+          ? "is not an attempt row"
+          : typeof attempt.attemptId !== "string" || attempt.attemptId === ""
+            ? "has no attemptId"
+            : !attempt.key || [attempt.key.name, attempt.key.from, attempt.key.to].some((part) => typeof part !== "string" || part === "")
+              ? "has no complete key (name, from, to)"
+              : !ATTEMPT_STATES.has(attempt.state as AttemptState)
+                ? `has an unknown state ${JSON.stringify(attempt.state)}`
+                : typeof attempt.minerId !== "string"
+                  ? "has no minerId"
+                  : null;
+      if (problem) throw new Error(`${LEDGER_FILE} line ${index + 1} ${problem}`);
       return attempt as AttemptRow;
     });
 
@@ -125,14 +147,16 @@ export class PurchaseRecord {
   private constructor(
     private readonly github: GitHubApi,
     private readonly lease: Lease,
-    private headOid: string,
+    private head: Head,
     private ledger: string,
+    private ledgerRows: AttemptRow[],
     private readonly now: () => Date,
   ) {}
 
   /**
-   * Acquires the lease. Taking over an expired lease first marks the previous holder's open attempts
-   * (reserved, request_sent) as unknown_needs_reconciliation, in the same commit.
+   * Acquires the lease. Any attempt still reserved or request_sent belongs to a run that no longer holds the record
+   * (its lease expired, or it released the lease without finishing), so it becomes unknown_needs_reconciliation in the
+   * same commit: never bought again until a person checks the wallet and escrow.
    */
   static async open(github: GitHubApi, runId: string, now: () => Date = () => new Date()): Promise<PurchaseRecord> {
     const branch = await github.readBranch();
@@ -149,33 +173,30 @@ export class PurchaseRecord {
       acquiredAt: time.toISOString(),
       expiresAt: new Date(time.getTime() + LEASE_MS).toISOString(),
     };
-    const stale = current
-      ? latestByAttempt(rows)
-          .filter((row) => row.state === "reserved" || row.state === "request_sent")
-          .map(
-            (row): AttemptRow => ({
-              ...row,
-              runId,
-              state: "unknown_needs_reconciliation",
-              reason: `run ${row.runId}'s lease expired during this attempt (last state ${row.state}); check the wallet and escrow before buying again`,
-              time: time.toISOString(),
-            }),
-          )
-      : [];
+    const stale = latestByAttempt(rows)
+      .filter((row) => row.state === "reserved" || row.state === "request_sent")
+      .map(
+        (row): AttemptRow => ({
+          ...row,
+          runId,
+          state: "unknown_needs_reconciliation",
+          reason: `run ${row.runId} stopped during this attempt (last state ${row.state}); check the wallet and escrow before buying again`,
+          time: time.toISOString(),
+        }),
+      );
     const nextLedger = ledger + stale.map((row) => `${JSON.stringify(row)}\n`).join("");
     const message = `preflight: lease for run ${runId}${stale.length ? `; ${stale.length} stale attempts need reconciliation` : ""}`;
     const files = { [LEDGER_FILE]: nextLedger, [LEASE_FILE]: serializeLease(lease) };
-    const beforeOid = branch?.headOid ?? ZERO_OID;
-    const afterOid = await github.commitFiles(branch?.headOid ?? null, files, message);
+    const after = await github.commitFiles(branch?.head ?? null, files, message);
     try {
-      await github.moveBranch(beforeOid, afterOid);
+      await github.moveBranch(branch?.head.oid ?? ZERO_OID, after.oid);
     } catch (error) {
       // Lost or refused: only a re-read can tell whether the lease is ours.
-      const after = await github.readBranch();
-      if (after?.headOid !== afterOid)
+      const reread = await github.readBranch();
+      if (reread?.head.oid !== after.oid)
         throw new LeaseHeldError(`another run took the purchase record first (${String(error)})`.slice(0, 300));
     }
-    return new PurchaseRecord(github, lease, afterOid, nextLedger, now);
+    return new PurchaseRecord(github, lease, after, nextLedger, parseLedger(nextLedger), now);
   }
 
   get runId(): string {
@@ -183,7 +204,7 @@ export class PurchaseRecord {
   }
 
   rows(): AttemptRow[] {
-    return parseLedger(this.ledger);
+    return this.ledgerRows;
   }
 
   status(key: PurchaseKey): KeyStatus {
@@ -197,12 +218,18 @@ export class PurchaseRecord {
 
   /** Appends rows in one commit. A delivered row's receipt must be new: one row per receipt (as in the PR Agent). */
   async append(rows: AttemptRow[]): Promise<void> {
-    const existing = this.rows();
-    const receipts = new Set(existing.map((row) => row.receipt?.receiptHash).filter((hash) => hash));
-    for (const row of rows)
-      if (row.receipt?.receiptHash && receipts.has(row.receipt.receiptHash))
-        throw new Error(`receipt ${row.receipt.receiptHash} is already recorded`);
-    await this.write(this.ledger + rows.map((row) => `${JSON.stringify(row)}\n`).join(""), this.lease, `preflight: ${rows.map((row) => `${keyId(row.key)} ${row.state}`).join("; ")}`.slice(0, 200));
+    const receipts = new Set(this.ledgerRows.map((row) => row.receipt?.receiptHash).filter((hash) => hash));
+    for (const row of rows) {
+      const hash = row.receipt?.receiptHash;
+      if (!hash) continue;
+      if (receipts.has(hash)) throw new Error(`receipt ${hash} is already recorded`);
+      receipts.add(hash);
+    }
+    const ledger = this.ledger + rows.map((row) => `${JSON.stringify(row)}\n`).join("");
+    // Parsed before writing: a row this run can't read back must never reach the branch.
+    const ledgerRows = parseLedger(ledger);
+    await this.write(ledger, this.lease, `preflight: ${rows.map((row) => `${keyId(row.key)} ${row.state}`).join("; ")}`.slice(0, 200));
+    this.ledgerRows = ledgerRows;
   }
 
   /** Clears the lease so the next run needn't wait for it to expire. */
@@ -210,21 +237,22 @@ export class PurchaseRecord {
     await this.write(this.ledger, null, `preflight: release run ${this.lease.runId}`);
   }
 
+  // No clock check here: past its expiry the lease can be taken over, and a takeover moves the branch, so the
+  // compare-and-swap below refuses the write. Until then a late write (say, a delivered row that finished just after
+  // expiry) is still this run's and must be kept.
   private async write(ledger: string, lease: Lease | null, message: string): Promise<void> {
-    if (Date.parse(this.lease.expiresAt) <= this.now().getTime())
-      throw new LeaseLostError(`this run's lease expired at ${this.lease.expiresAt}`);
-    const afterOid = await this.github.commitFiles(this.headOid, { [LEDGER_FILE]: ledger, [LEASE_FILE]: serializeLease(lease) }, message);
+    const after = await this.github.commitFiles(this.head, { [LEDGER_FILE]: ledger, [LEASE_FILE]: serializeLease(lease) }, message);
     try {
-      await this.github.moveBranch(this.headOid, afterOid);
+      await this.github.moveBranch(this.head.oid, after.oid);
     } catch (error) {
       // Refused (the branch moved) or the answer was lost: the write counts only if the head is now our commit.
-      const after = await this.github.readBranch().catch((readError: unknown) => {
+      const reread = await this.github.readBranch().catch((readError: unknown) => {
         throw new LeaseLostError(`write outcome unknown and the branch can't be read: ${String(readError)}`.slice(0, 300));
       });
-      if (after?.headOid !== afterOid)
+      if (reread?.head.oid !== after.oid)
         throw new LeaseLostError(`the ${RECORD_BRANCH} branch moved under this run: ${String(error)}`.slice(0, 300));
     }
-    this.headOid = afterOid;
+    this.head = after;
     this.ledger = ledger;
   }
 }
@@ -257,7 +285,13 @@ export const githubApi = (fetcher: typeof fetch, connection: GitHubConnection): 
 
   const call = async <T>(url: string, init: RequestInit, what: string): Promise<T> => {
     const response = await fetcher(url, { ...init, headers, signal: AbortSignal.timeout(30_000) });
-    const body = (await response.json()) as T & { errors?: { message?: string }[]; message?: string };
+    const text = await response.text();
+    let body: T & { errors?: { message?: string }[]; message?: string };
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new Error(`${what}: HTTP ${response.status}, not JSON: ${text.slice(0, 200)}`);
+    }
     if (!response.ok || body.errors?.length)
       throw new Error(`${what}: HTTP ${response.status} ${body.errors?.map((error) => error.message).join("; ") ?? body.message ?? ""}`.slice(0, 300));
     return body;
@@ -275,7 +309,9 @@ export const githubApi = (fetcher: typeof fetch, connection: GitHubConnection): 
       const data = await graphql<{
         repository: {
           id: string;
-          ref: { target: { oid: string; ledger: { object: BlobObject } | null; lease: { object: BlobObject } | null } } | null;
+          ref: {
+            target: { oid: string; tree: { oid: string }; ledger: { object: BlobObject } | null; lease: { object: BlobObject } | null };
+          } | null;
         };
       }>(
         `query($owner: String!, $name: String!, $ref: String!) {
@@ -285,6 +321,7 @@ export const githubApi = (fetcher: typeof fetch, connection: GitHubConnection): 
               target {
                 oid
                 ... on Commit {
+                  tree { oid }
                   ledger: file(path: "${LEDGER_FILE}") { object { ... on Blob { text isTruncated } } }
                   lease: file(path: "${LEASE_FILE}") { object { ... on Blob { text isTruncated } } }
                 }
@@ -299,23 +336,20 @@ export const githubApi = (fetcher: typeof fetch, connection: GitHubConnection): 
       const target = data.repository.ref?.target;
       if (!target) return null;
       return {
-        headOid: target.oid,
+        head: { oid: target.oid, treeOid: target.tree.oid },
         ledger: blobText(target.ledger?.object ?? null, LEDGER_FILE) ?? "",
         lease: blobText(target.lease?.object ?? null, LEASE_FILE),
       };
     },
 
-    async commitFiles(parentOid, files, message) {
+    async commitFiles(parent, files, message) {
       const base = `${apiUrl}/repos/${owner}/${name}/git`;
-      const parentTree = parentOid
-        ? (await call<{ tree: { sha: string } }>(`${base}/commits/${parentOid}`, { method: "GET" }, "read parent commit")).tree.sha
-        : undefined;
       const tree = await call<{ sha: string }>(
         `${base}/trees`,
         {
           method: "POST",
           body: JSON.stringify({
-            ...(parentTree ? { base_tree: parentTree } : {}),
+            ...(parent ? { base_tree: parent.treeOid } : {}),
             tree: Object.entries(files).map(([path, content]) => ({ path, mode: "100644", type: "blob", content })),
           }),
         },
@@ -323,10 +357,10 @@ export const githubApi = (fetcher: typeof fetch, connection: GitHubConnection): 
       );
       const commit = await call<{ sha: string }>(
         `${base}/commits`,
-        { method: "POST", body: JSON.stringify({ message, tree: tree.sha, parents: parentOid ? [parentOid] : [] }) },
+        { method: "POST", body: JSON.stringify({ message, tree: tree.sha, parents: parent ? [parent.oid] : [] }) },
         "write commit",
       );
-      return commit.sha;
+      return { oid: commit.sha, treeOid: tree.sha };
     },
 
     async moveBranch(beforeOid, afterOid) {

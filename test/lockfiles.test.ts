@@ -20,17 +20,17 @@ describe("real lockfiles (pinned fixtures)", () => {
     expect(report.notAssessed).toEqual([]);
     // A workspace member's own runtime dependency is attributed to that member.
     const [features] = find(report.packages, "@solana/wallet-standard-features");
-    expect(features.usages).toContainEqual({ member: "packages/core/base", direct: true, runtime: true });
+    expect(features.usages).toContainEqual({ member: "packages/core/base", direct: true, runtime: true, directRuntime: true });
   });
 
   it("wallet-adapter: the @types/web override is assessed as the replacing package, typescript", () => {
     const report = assessed(discover(join(FIXTURES, "real/wallet-adapter/files")).lockfiles[0]);
     const [typescript] = find(report.packages, "typescript", "5.8.3");
     expect(typescript.localNames).toEqual([{ name: "@types/web", kind: "override" }]);
-    // Not dev-only in this lockfile: a direct runtime dependency of the example app, and a resolved peer of
-    // @solana/codecs-* packages, which pnpm installs.
-    expect(typescript.usages).toContainEqual({ member: "packages/starter/example", direct: true, runtime: true });
-    expect(typescript.usages).toContainEqual({ member: ".", direct: true, runtime: false });
+    // Not dev-only in this lockfile: a resolved peer of @solana/codecs-* packages, which pnpm installs. But the
+    // example app declares it only as a devDependency, so it is direct and runtime, not a direct runtime dependency.
+    expect(typescript.usages).toContainEqual({ member: "packages/starter/example", direct: true, runtime: true, directRuntime: false });
+    expect(typescript.usages).toContainEqual({ member: ".", direct: true, runtime: false, directRuntime: false });
   });
 
   it("anchor ts/: Yarn 1 workspaces; the web3.js alias is assessed as @solana/web3.js 3.0.0", () => {
@@ -40,7 +40,7 @@ describe("real lockfiles (pinned fixtures)", () => {
     expect(report.packages).toHaveLength(744);
     const [web3] = find(report.packages, "@solana/web3.js", "3.0.0");
     expect(web3.localNames).toEqual([{ name: "@anchor-lang/solana-web3-v3", kind: "alias" }]);
-    expect(web3.usages).toContainEqual({ member: "ts/packages/anchor", direct: true, runtime: true });
+    expect(web3.usages).toContainEqual({ member: "ts/packages/anchor", direct: true, runtime: true, directRuntime: true });
   });
 
   it("drift sdk/: the Anchor alias is assessed as @coral-xyz/anchor 0.30.1; resolution-only entries are kept", () => {
@@ -50,7 +50,7 @@ describe("real lockfiles (pinned fixtures)", () => {
     expect(find(report.packages, "@coral-xyz/anchor").map((locked) => locked.version).sort()).toEqual(["0.29.0", "0.30.1"]);
     const [anchor30] = find(report.packages, "@coral-xyz/anchor", "0.30.1");
     expect(anchor30.localNames).toEqual([{ name: "@coral-xyz/anchor-30", kind: "alias" }]);
-    expect(anchor30.usages).toEqual([{ member: "sdk", direct: true, runtime: true }]);
+    expect(anchor30.usages).toEqual([{ member: "sdk", direct: true, runtime: true, directRuntime: true }]);
     // Entries pinned by "resolutions" that no dependency reaches are still assessed, unattributed.
     expect(report.packages.filter((locked) => locked.usages.length === 0)).toHaveLength(11);
   });
@@ -69,7 +69,7 @@ describe("controlled lockfiles", () => {
   it("the compromised fixture locks @solana/web3.js 1.95.6 as a direct runtime dependency", () => {
     const report = assessed(discover(join(FIXTURES, "controlled/compromised-web3js-1.95.6")).lockfiles[0]);
     expect(report.packages).toEqual([
-      { name: "@solana/web3.js", version: "1.95.6", lockfile: "package-lock.json", localNames: [], usages: [{ member: ".", direct: true, runtime: true }] },
+      { name: "@solana/web3.js", version: "1.95.6", lockfile: "package-lock.json", localNames: [], usages: [{ member: ".", direct: true, runtime: true, directRuntime: true }] },
     ]);
   });
 });
@@ -112,13 +112,29 @@ describe("discovery", () => {
     });
     const report = assessed(discover(root).lockfiles[0]);
     expect(report.members).toEqual([".", "packages/app", "packages/lib"]);
-    expect(find(report.packages, "a", "2.0.0")[0].usages).toEqual([{ member: "packages/app", direct: true, runtime: true }]);
+    expect(find(report.packages, "a", "2.0.0")[0].usages).toEqual([{ member: "packages/app", direct: true, runtime: true, directRuntime: true }]);
     expect(find(report.packages, "a", "1.0.0")[0].usages).toEqual([
-      { member: "packages/app", direct: false, runtime: true },
-      { member: "packages/lib", direct: true, runtime: true },
+      { member: "packages/app", direct: false, runtime: true, directRuntime: false },
+      { member: "packages/lib", direct: true, runtime: true, directRuntime: true },
     ]);
     expect(find(report.packages, "b")[0].usages.every((usage) => !usage.direct && usage.runtime)).toBe(true);
-    expect(find(report.packages, "vitest")[0].usages).toEqual([{ member: ".", direct: true, runtime: false }]);
+    expect(find(report.packages, "vitest")[0].usages).toEqual([{ member: ".", direct: true, runtime: false, directRuntime: false }]);
+  });
+
+  it("a direct devDependency that a runtime dependency also pulls in is runtime, but not a direct runtime dependency", () => {
+    const root = writeTree({
+      "package.json": { name: "app", dependencies: { express: "^4.0.0" }, devDependencies: { debug: "^2.6.0" } },
+      "package-lock.json": npmLock(
+        {
+          "node_modules/express": { version: "4.21.0", resolved: tarball("express", "4.21.0"), dependencies: { debug: "2.6.9" } },
+          "node_modules/debug": { version: "2.6.9", resolved: tarball("debug", "2.6.9") },
+        },
+        { dependencies: { express: "^4.0.0" }, devDependencies: { debug: "^2.6.0" } },
+      ),
+    });
+    const report = assessed(discover(root).lockfiles[0]);
+    expect(find(report.packages, "debug")[0].usages).toEqual([{ member: ".", direct: true, runtime: true, directRuntime: false }]);
+    expect(find(report.packages, "express")[0].usages).toEqual([{ member: ".", direct: true, runtime: true, directRuntime: true }]);
   });
 
   it("pnpm v6 (single project)", () => {
@@ -149,9 +165,9 @@ describe("discovery", () => {
     });
     const report = assessed(discover(root).lockfiles[0]);
     expect(report.packages.map((locked) => [locked.name, locked.version, locked.usages])).toEqual([
-      ["a", "1.0.0", [{ member: ".", direct: true, runtime: true }]],
-      ["b", "2.0.0", [{ member: ".", direct: false, runtime: true }]],
-      ["d", "1.2.0", [{ member: ".", direct: true, runtime: false }]],
+      ["a", "1.0.0", [{ member: ".", direct: true, runtime: true, directRuntime: true }]],
+      ["b", "2.0.0", [{ member: ".", direct: false, runtime: true, directRuntime: false }]],
+      ["d", "1.2.0", [{ member: ".", direct: true, runtime: false, directRuntime: false }]],
     ]);
   });
 });
@@ -175,7 +191,7 @@ describe("aliases and package identity", () => {
         version: "1.95.6",
         lockfile: "yarn.lock",
         localNames: [{ name: "safe-name", kind: "alias" }],
-        usages: [{ member: ".", direct: true, runtime: true }],
+        usages: [{ member: ".", direct: true, runtime: true, directRuntime: true }],
       },
     ]);
   });
@@ -185,7 +201,7 @@ describe("aliases and package identity", () => {
     const report = assessed(discover(root).lockfiles[0]);
     expect(report.packages).toEqual([]);
     expect(report.notAssessed).toEqual([
-      expect.objectContaining({ name: "safe-name", reason: "package identity could not be verified", usages: [{ member: ".", direct: true, runtime: true }] }),
+      expect.objectContaining({ name: "safe-name", reason: "package identity could not be verified", usages: [{ member: ".", direct: true, runtime: true, directRuntime: true }] }),
     ]);
   });
 
@@ -229,7 +245,7 @@ describe("assessing a subdirectory", () => {
     expect([report.path, report.members]).toEqual(["sdk/yarn.lock", ["sdk"]]);
     expect(find(report.packages, "@coral-xyz/anchor", "0.29.0")[0]).toMatchObject({
       lockfile: "sdk/yarn.lock",
-      usages: [{ member: "sdk", direct: true, runtime: true }],
+      usages: [{ member: "sdk", direct: true, runtime: true, directRuntime: true }],
     });
   });
 });

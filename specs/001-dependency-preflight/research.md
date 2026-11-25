@@ -43,8 +43,9 @@ rationale, alternatives. "Verified" means run or measured on the date given.
   source, or an unparseable source is "not assessed".
 - **Evidence**: drift `sdk/` `@coral-xyz/anchor-30` → `@coral-xyz/anchor` 0.30.1; anchor `ts/`
   `@anchor-lang/solana-web3-v3` → `@solana/web3.js` 3.0.0; wallet-adapter override `@types/web` → `typescript` 5.8.3,
-  which is a runtime dependency there (direct in `packages/starter/example`, and a resolved peer of
-  `@solana/codecs-*`), not dev-only as first assumed.
+  which is reachable at runtime there (a resolved peer of `@solana/codecs-*`, which pnpm installs), not dev-only as
+  first assumed. It is declared only as a devDependency (in `packages/starter/example` and the root), so it is not a
+  direct runtime dependency (corrected 25 Nov; `Usage.directRuntime`).
 - **Alternatives**: aliases as not assessed (the original FR-001a): false "review" verdicts and a known way to slip a
   malicious package past scanners.
 
@@ -109,6 +110,8 @@ rationale, alternatives. "Verified" means run or measured on the date given.
   code path (decided 25 Nov, in place of the planned `zod/v3` import). Answers over 1,000,000 characters are not
   validated at all. Unusable answers are dropped and counted against caps; `not_found` and unavailable are
   stated, never "no changes".
+- **Introduced vulnerabilities**: an answer saying the target version introduces an advisory is kept and the
+  advisory shown as a warning (the PR Agent rejects the whole answer; here that would hide it).
 - **Candidates** (FR-007): outdated direct runtime dependencies with a minor or major gap, key packages first.
   Transitive and dev-only packages are never bought, even when they match a key-package pattern.
 - **No TypeScript/Rust ordering**: the schema's changes carry kind, version, evidence type, change, excerpt, source
@@ -128,12 +131,13 @@ rationale, alternatives. "Verified" means run or measured on the date given.
   an exact expected head.
 - **Lease** (run-level, approved 25 Nov): before any paid processing the run writes `lease.json` (`token`, `runId`,
   `acquiredAt`, `expiresAt`) by compare-and-swap. The lease is taken only when absent or expired. Every later record
-  write checks that `lease.json` at the head still holds the run's token. The run stops buying before `expiresAt`
-  and releases the lease at the end. Expiry is longer than the job's `timeout-minutes`, which the installer workflow
+  write builds on the run's own last commit (which holds its token) and is refused if anything moved the branch. The
+  run starts no paid request within 3 minutes of `expiresAt` and releases the lease at the end. A write after
+  `expiresAt` (a result that came back late) is still accepted until another run takes over, which moves the branch. Expiry is longer than the job's `timeout-minutes`, which the installer workflow
   sets.
-- **Expired lease**: a run may take over an expired lease (compare-and-swap). Before paying, it reconciles the
-  previous holder's attempts: any `reserved` or `request_sent` attempt becomes `unknown_needs_reconciliation` and is
-  not bought again until a person resolves it.
+- **Expired or released lease**: a run takes the lease when it is absent or expired (compare-and-swap). In the same
+  commit, any attempt still `reserved` or `request_sent` (left by a run that expired or released without finishing)
+  becomes `unknown_needs_reconciliation` and is not bought again until a person resolves it.
 - **Ambiguous write** (the `updateRefs` response is lost): re-read the branch. If the head is the run's commit,
   continue. Otherwise, or if the read fails, stop buying for this run.
 - **No record, no purchase** (FR-009b): no wallet, a failed `reserved` write or a lease that isn't held means free mode,

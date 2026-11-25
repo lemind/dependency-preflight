@@ -7,8 +7,12 @@ import semver from "semver";
 
 export type LockfileFormat = "npm" | "pnpm" | "yarn1";
 
-/** How a workspace member uses a locked package. */
-export type Usage = { member: string; direct: boolean; runtime: boolean };
+/**
+ * How a workspace member uses a locked package. `direct`: declared in the member's manifest (runtime or dev).
+ * `runtime`: reachable from its runtime declarations. `directRuntime`: declared in its runtime declarations; a direct
+ * devDependency that is also pulled in at runtime by something else is direct and runtime, but not directRuntime.
+ */
+export type Usage = { member: string; direct: boolean; runtime: boolean; directRuntime: boolean };
 
 /** A local install name that differs from the registry package it resolves to. */
 export type LocalName = { name: string; kind: "alias" | "override" };
@@ -240,9 +244,15 @@ const collect = (
     const runtime = reach(graph, member.runtimeRoots);
     const all = new Set([...runtime, ...reach(graph, member.devRoots)]);
     const direct = new Set([...member.runtimeRoots, ...member.devRoots]);
+    const directRuntime = new Set(member.runtimeRoots);
     for (const id of all) {
       if (!usages.has(id)) usages.set(id, new Map());
-      usages.get(id)!.set(memberPath, { member: memberPath, direct: direct.has(id), runtime: runtime.has(id) });
+      usages.get(id)!.set(memberPath, {
+        member: memberPath,
+        direct: direct.has(id),
+        runtime: runtime.has(id),
+        directRuntime: directRuntime.has(id),
+      });
     }
   }
   const packages = new Map<string, LockedPackage>();
@@ -254,6 +264,7 @@ const collect = (
       else {
         existing.direct ||= usage.direct;
         existing.runtime ||= usage.runtime;
+        existing.directRuntime ||= usage.directRuntime;
       }
     }
   };

@@ -13,7 +13,7 @@ const finding = (
   gap: OutdatedFinding["gap"],
   options: { key?: boolean; usages?: Usage[]; lockfile?: string } = {},
 ): OutdatedFinding => {
-  const usages = options.usages ?? [{ member: ".", direct: true, runtime: true }];
+  const usages = options.usages ?? [{ member: ".", direct: true, runtime: true, directRuntime: true }];
   const lockedPackage: LockedPackage = { name, version, lockfile: options.lockfile ?? "package-lock.json", localNames: [], usages };
   return { package: lockedPackage, key: options.key ?? false, runtime: usages.some((usage) => usage.runtime), latest, gap };
 };
@@ -44,14 +44,14 @@ describe("selectCandidates (T021, FR-007, FR-010)", () => {
   it("skips patch gaps and dependencies that are direct only for development, with the reason", () => {
     const { candidates, skipped } = selectCandidates(
       [
-        finding("typescript", "5.4.0", "5.9.3", "minor", { usages: [{ member: ".", direct: true, runtime: false }] }),
+        finding("typescript", "5.4.0", "5.9.3", "minor", { usages: [{ member: ".", direct: true, runtime: false, directRuntime: false }] }),
         finding("@solana/kit", "8.6.0", "8.6.1", "patch", { key: true }),
         // Direct as a dev dependency in one member, reached at runtime only transitively in another: not eligible.
         finding("@solana/web3.js", "1.98.0", "3.2.1", "major", {
           key: true,
           usages: [
-            { member: "tools", direct: true, runtime: false },
-            { member: "app", direct: false, runtime: true },
+            { member: "tools", direct: true, runtime: false, directRuntime: false },
+            { member: "app", direct: false, runtime: true, directRuntime: false },
           ],
         }),
       ],
@@ -65,20 +65,29 @@ describe("selectCandidates (T021, FR-007, FR-010)", () => {
     ]);
   });
 
+  it("skips a direct devDependency that a runtime dependency also pulls in (review, 25 Nov)", () => {
+    const { candidates, skipped } = selectCandidates(
+      [finding("debug", "2.6.9", "4.4.3", "major", { usages: [{ member: ".", direct: true, runtime: true, directRuntime: false }] })],
+      10,
+    );
+    expect(candidates).toEqual([]);
+    expect(skipped[0].reason).toBe("not a direct runtime dependency: not explained automatically");
+  });
+
   it("buys one answer per package and version pair, listing every lockfile and member that locks it", () => {
     const { candidates } = selectCandidates(
       [
         finding("@coral-xyz/anchor", "0.29.0", "0.32.1", "major", {
           key: true,
           lockfile: "sdk/yarn.lock",
-          usages: [{ member: "sdk", direct: true, runtime: true }],
+          usages: [{ member: "sdk", direct: true, runtime: true, directRuntime: true }],
         }),
         finding("@coral-xyz/anchor", "0.29.0", "0.32.1", "major", {
           key: true,
           lockfile: "tests/yarn.lock",
           usages: [
-            { member: "tests", direct: true, runtime: true },
-            { member: "tests/dev", direct: true, runtime: false },
+            { member: "tests", direct: true, runtime: true, directRuntime: true },
+            { member: "tests/dev", direct: true, runtime: false, directRuntime: false },
           ],
         }),
         finding("@coral-xyz/anchor", "0.30.1", "0.32.1", "major", { key: true, lockfile: "app/yarn.lock" }),
@@ -98,7 +107,7 @@ describe("selectCandidates (T021, FR-007, FR-010)", () => {
   it("an eligible lock of a pair wins over a dev-only lock of the same pair elsewhere", () => {
     const { candidates, skipped } = selectCandidates(
       [
-        finding("zod", "3.22.0", "4.6.7", "major", { lockfile: "a/package-lock.json", usages: [{ member: "a", direct: true, runtime: false }] }),
+        finding("zod", "3.22.0", "4.6.7", "major", { lockfile: "a/package-lock.json", usages: [{ member: "a", direct: true, runtime: false, directRuntime: false }] }),
         finding("zod", "3.22.0", "4.6.7", "major", { lockfile: "b/package-lock.json" }),
       ],
       10,
@@ -120,6 +129,14 @@ describe("selectCandidates (T021, FR-007, FR-010)", () => {
       { name: "pkg-11", from: "1.0.0", to: "2.0.0", reason: "over the limit of 10 purchases per run" },
     ]);
     expect(selectCandidates(outdated, 0).candidates).toEqual([]);
+  });
+
+  it("breaks a tie between versions of one package by version order, not text order", () => {
+    const { candidates } = selectCandidates(
+      [finding("zod", "10.0.0", "12.0.0", "major", { lockfile: "a.json" }), finding("zod", "9.1.0", "12.0.0", "major", { lockfile: "b.json" })],
+      1,
+    );
+    expect(candidates.map((candidate) => candidate.from)).toEqual(["9.1.0"]);
   });
 
   it("refuses a max-purchases that is not a whole number of 0 or more", () => {

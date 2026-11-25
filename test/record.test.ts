@@ -18,15 +18,19 @@ const fakeGitHub = () => {
   const commits = new Map<string, Record<string, string>>();
   let head: string | null = null;
   let counter = 0;
+  const tree = (oid: string) => `t${oid.slice(1)}`;
   const api: GitHubApi & { head: () => string | null; files: () => Record<string, string> } = {
     head: () => head,
     files: () => (head ? commits.get(head)! : {}),
     readBranch: async () =>
-      head ? { headOid: head, ledger: commits.get(head)![LEDGER_FILE] ?? "", lease: commits.get(head)![LEASE_FILE] ?? null } : null,
-    commitFiles: async (parentOid, files) => {
+      head
+        ? { head: { oid: head, treeOid: tree(head) }, ledger: commits.get(head)![LEDGER_FILE] ?? "", lease: commits.get(head)![LEASE_FILE] ?? null }
+        : null,
+    commitFiles: async (parent, files) => {
+      if (parent && parent.treeOid !== tree(parent.oid)) throw new Error("wrong parent tree");
       const oid = `c${++counter}`.padEnd(40, "0");
-      commits.set(oid, { ...(parentOid ? commits.get(parentOid) : {}), ...files });
-      return oid;
+      commits.set(oid, { ...(parent ? commits.get(parent.oid) : {}), ...files });
+      return { oid, treeOid: tree(oid) };
     },
     moveBranch: async (beforeOid, afterOid) => {
       if ((head ?? "0".repeat(40)) !== beforeOid) throw new Error(`ref moved: expected ${beforeOid}, is ${head}`);
@@ -85,7 +89,7 @@ describe("purchase record and lease (T023, research R11)", () => {
       ["a1", "unknown_needs_reconciliation"],
       ["a2", "unknown_needs_reconciliation"],
     ]);
-    expect(latest[1].reason).toMatch(/run run-1's lease expired.*last state request_sent/);
+    expect(latest[1].reason).toMatch(/run run-1 stopped during this attempt \(last state request_sent\)/);
     expect(second.status(key)).toMatchObject({ status: "open" }); // never bought again until a person reconciles
   });
 
@@ -93,7 +97,8 @@ describe("purchase record and lease (T023, research R11)", () => {
     const github = fakeGitHub();
     const record = await PurchaseRecord.open(github, "run-1", at("2026-11-25T10:00:00Z"));
     // Someone else commits to the branch (e.g. a person editing the ledger by hand).
-    await github.moveBranch(github.head()!, await github.commitFiles(github.head(), { "note.txt": "x" }, "manual"));
+    const head = (await github.readBranch())!.head;
+    await github.moveBranch(head.oid, (await github.commitFiles(head, { "note.txt": "x" }, "manual")).oid);
     await expect(record.append([row("reserved")])).rejects.toBeInstanceOf(LeaseLostError);
   });
 
@@ -115,15 +120,31 @@ describe("purchase record and lease (T023, research R11)", () => {
     await expect(record.append([row("request_sent")])).rejects.toBeInstanceOf(LeaseLostError);
   });
 
-  it("stops writing once its own lease has expired, and stops starting purchases before that", async () => {
+  it("stops starting purchases near expiry, but keeps a late result until another run takes over", async () => {
     const github = fakeGitHub();
     let now = new Date("2026-11-25T10:00:00Z");
     const record = await PurchaseRecord.open(github, "run-1", () => now);
     expect(record.canStartPurchase()).toBe(true);
     now = new Date("2026-11-25T10:18:00Z");
     expect(record.canStartPurchase()).toBe(false);
-    now = new Date("2026-11-25T10:20:00Z");
-    await expect(record.append([row("reserved")])).rejects.toBeInstanceOf(LeaseLostError);
+    await record.append([row("reserved"), row("request_sent")]);
+    // The paid answer comes back after expiry; nobody has taken over, so it is still recorded (review, 25 Nov).
+    now = new Date("2026-11-25T10:21:00Z");
+    await record.append([row("delivered")]);
+    expect(record.status(key)).toMatchObject({ status: "delivered" });
+    // Once another run takes over, the late run can't write any more.
+    await PurchaseRecord.open(github, "run-2", () => now);
+    await expect(record.append([row("delivered", { attemptId: "a9" })])).rejects.toBeInstanceOf(LeaseLostError);
+  });
+
+  it("marks a run's unfinished attempts for reconciliation even when it released the lease", async () => {
+    const github = fakeGitHub();
+    const first = await PurchaseRecord.open(github, "run-1", at("2026-11-25T10:00:00Z"));
+    await first.append([row("reserved"), row("request_sent")]);
+    await first.release(); // e.g. in a finally block after a crash
+    const second = await PurchaseRecord.open(github, "run-2", at("2026-11-25T10:01:00Z"));
+    expect(second.rows().at(-1)).toMatchObject({ state: "unknown_needs_reconciliation", runId: "run-2" });
+    expect(second.status(key)).toMatchObject({ status: "open" });
   });
 
   it("refuses a second row with the same receipt", async () => {
@@ -132,11 +153,18 @@ describe("purchase record and lease (T023, research R11)", () => {
     const receipt = { minerId: "7314", amountUsdc: 0.02, txHash: "", receiptHash: "0xr", signalHash: "", network: "eip155:11155111", chainId: 11155111 };
     await record.append([row("delivered", { receipt })]);
     await expect(record.append([row("delivered", { attemptId: "a2", receipt })])).rejects.toThrow(/already recorded/);
+    const receipt2 = { ...receipt, receiptHash: "0xr2" };
+    await expect(record.append([row("delivered", { attemptId: "a3", receipt: receipt2 }), row("delivered", { attemptId: "a4", receipt: receipt2 })]))
+      .rejects.toThrow(/0xr2 is already recorded/);
   });
 
   it("refuses a malformed ledger rather than skipping a line", () => {
     expect(() => parseLedger(`${JSON.stringify(row("reserved"))}\nnot json\n`)).toThrow(/line 2 is not JSON/);
     expect(() => parseLedger(`{"kind":"purchase"}\n`)).toThrow(/line 1 is not an attempt row/);
+    // A hand-edited row that would otherwise read as "not open" and let the key be bought again (review, 25 Nov).
+    expect(() => parseLedger(`${JSON.stringify(row("request_sent", { state: "request-sent" as never }))}\n`)).toThrow(/unknown state "request-sent"/);
+    expect(() => parseLedger(`${JSON.stringify(row("request_sent", { key: { name: "zod", from: "3.0.0" } as never }))}\n`)).toThrow(/no complete key/);
+    expect(() => parseLedger(`${JSON.stringify({ ...row("reserved"), minerId: undefined })}\n`)).toThrow(/no minerId/);
   });
 
   it("key status: delivered is reused whatever miner answered; failed attempts leave the key free", () => {
@@ -160,11 +188,11 @@ describe("githubApi request shapes", () => {
 
   it("reads the branch and both files in one GraphQL query, then moves it with updateRefs from the exact head", async () => {
     const { calls, fetcher } = replies([
-      { data: { repository: { id: "R_1", ref: { target: { oid: "head1", ledger: { object: { text: "", isTruncated: false } }, lease: null } } } } },
+      { data: { repository: { id: "R_1", ref: { target: { oid: "head1", tree: { oid: "tree1" }, ledger: { object: { text: "", isTruncated: false } }, lease: null } } } } },
       { data: { updateRefs: { clientMutationId: null } } },
     ]);
     const github = githubApi(fetcher, { repository: "lemind/demo", token: "t0ken" });
-    expect(await github.readBranch()).toEqual({ headOid: "head1", ledger: "", lease: null });
+    expect(await github.readBranch()).toEqual({ head: { oid: "head1", treeOid: "tree1" }, ledger: "", lease: null });
     await github.moveBranch("head1", "head2");
     expect(calls[0].url).toBe("https://api.github.com/graphql");
     expect(JSON.parse(String(calls[1].init.body))).toEqual({
@@ -174,27 +202,31 @@ describe("githubApi request shapes", () => {
     expect((calls[1].init.headers as Record<string, string>).Authorization).toBe("Bearer t0ken");
   });
 
-  it("builds a commit on the parent's tree with the files inline", async () => {
-    const { calls, fetcher } = replies([{ tree: { sha: "tree0" } }, { sha: "tree1" }, { sha: "commit1" }]);
+  it("builds a commit on the parent's tree with the files inline, in two requests", async () => {
+    const { calls, fetcher } = replies([{ sha: "tree1" }, { sha: "commit1" }]);
     const github = githubApi(fetcher, { repository: "lemind/demo", token: "t0ken" });
-    expect(await github.commitFiles("parent0", { [LEDGER_FILE]: "x\n" }, "msg")).toBe("commit1");
+    expect(await github.commitFiles({ oid: "parent0", treeOid: "tree0" }, { [LEDGER_FILE]: "x\n" }, "msg")).toEqual({ oid: "commit1", treeOid: "tree1" });
     expect(calls.map((call) => `${call.init.method} ${call.url}`)).toEqual([
-      "GET https://api.github.com/repos/lemind/demo/git/commits/parent0",
       "POST https://api.github.com/repos/lemind/demo/git/trees",
       "POST https://api.github.com/repos/lemind/demo/git/commits",
     ]);
-    expect(JSON.parse(String(calls[1].init.body))).toEqual({
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({
       base_tree: "tree0",
       tree: [{ path: LEDGER_FILE, mode: "100644", type: "blob", content: "x\n" }],
     });
-    expect(JSON.parse(String(calls[2].init.body))).toEqual({ message: "msg", tree: "tree1", parents: ["parent0"] });
+    expect(JSON.parse(String(calls[1].init.body))).toEqual({ message: "msg", tree: "tree1", parents: ["parent0"] });
   });
 
   it("fails on a GraphQL error, and on a truncated ledger instead of reading part of it", async () => {
     const refused = replies([{ errors: [{ message: "A ref was not updated: expected oid head1" }] }]);
     const github = githubApi(refused.fetcher, { repository: "lemind/demo", token: "t" });
     await expect(github.readBranch()).rejects.toThrow(/expected oid head1/);
-    const truncated = replies([{ data: { repository: { id: "R", ref: { target: { oid: "h", ledger: { object: { text: "x", isTruncated: true } }, lease: null } } } } }]);
+    const truncated = replies([{ data: { repository: { id: "R", ref: { target: { oid: "h", tree: { oid: "t" }, ledger: { object: { text: "x", isTruncated: true } }, lease: null } } } } }]);
     await expect(githubApi(truncated.fetcher, { repository: "lemind/demo", token: "t" }).readBranch()).rejects.toThrow(/too large/);
+  });
+
+  it("names the HTTP status when GitHub answers with an error page that isn't JSON", async () => {
+    const fetcher = (async () => new Response("<html>502 Bad Gateway</html>", { status: 502 })) as unknown as typeof fetch;
+    await expect(githubApi(fetcher, { repository: "lemind/demo", token: "t0ken" }).readBranch()).rejects.toThrow(/read preflight: HTTP 502, not JSON/);
   });
 });

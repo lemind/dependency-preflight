@@ -122,6 +122,21 @@ describe("real lockfiles against recorded OSV answers", () => {
       expect([...check.advisories.values()].filter((groups) => groups.length > 0)).toHaveLength(withAdvisories);
     });
 
+  // The verdicts of the free-mode runs (T018, T047): the blocking reasons come from advisories alone.
+  for (const [name, verdict, blockedBy] of [
+    ["wallet-adapter", "blocked", ["next@15.3.3"]],
+    ["anchor-ts", "review", []],
+    ["drift-sdk", "blocked", ["nanoid@3.3.4", "zod@4.0.17"]],
+  ] as const)
+    it(`${name}: ${verdict}${blockedBy.length ? ` by ${blockedBy.join(", ")}` : ""}`, async () => {
+      const assessment = await assess(join(FIXTURES, `real/${name}/files`), DEFAULT_KEY_PACKAGES, replayFetcher(loadRecording(`real/${name}/osv.json`)));
+      expect(assessment.verdict).toBe(verdict);
+      const directRuntimeBlocking = assessment.advisories.filter(
+        (finding) => finding.tier === "direct-runtime" && (finding.severity === "high" || finding.severity === "critical"),
+      );
+      expect(directRuntimeBlocking.map((finding) => `${finding.package.name}@${finding.package.version}`).sort()).toEqual([...blockedBy]);
+    });
+
   it("drift sdk/: runtime findings rank before development-only ones", async () => {
     const assessment = await assess(
       join(FIXTURES, "real/drift-sdk/files"),

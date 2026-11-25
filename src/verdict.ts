@@ -64,7 +64,7 @@ export const isKeyPackage = (name: string, patterns: string[]): boolean =>
 
 export const isRuntime = (usages: Usage[]): boolean => usages.some((usage) => usage.runtime);
 export const isDirect = (usages: Usage[]): boolean => usages.some((usage) => usage.direct);
-const isDirectRuntime = (usages: Usage[]): boolean => usages.some((usage) => usage.direct && usage.runtime);
+const isDirectRuntime = (usages: Usage[]): boolean => usages.some((usage) => usage.directRuntime);
 
 const TIER_ORDER: Tier[] = ["malicious", "direct-runtime", "transitive-runtime", "dev", "unreachable"];
 

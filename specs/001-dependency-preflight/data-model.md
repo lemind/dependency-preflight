@@ -36,8 +36,10 @@ Unique by (`lockfile`, `name`, `version`). Different versions of one package in 
 
 ### `Usage`
 
-`{ member: string, direct: boolean, runtime: boolean }`: direct = declared in that member's manifest or importer;
-runtime = reachable from its runtime declarations (see research R3).
+`{ member: string, direct: boolean, runtime: boolean, directRuntime: boolean }`: direct = declared in that member's
+manifest or importer (runtime or dev); runtime = reachable from its runtime declarations (see research R3);
+directRuntime = declared in its runtime declarations. A direct devDependency that another dependency pulls in at
+runtime is direct and runtime, but not directRuntime: it is not in the direct-runtime tier and is never bought.
 
 ### `NotAssessedDependency`
 
@@ -115,15 +117,27 @@ the verdict.
 
 ## Upgrade explanation [P2]
 
-From a validated miner answer (research R10): `{ package, from, to, minerId, outcome: found | not_found | unavailable |
-unusable, changes: { kind: breaking | deprecation | security_fix, version, evidenceType, change, migration?, quote,
-sourceUrl }[], purchase? }`. Changes are shown breaking first, then deprecations and security fixes, oldest version first (as in the PR Agent): the answer schema has no field saying whether a
-change affects TypeScript or Rust, so the report does not infer it. Only validated answers are shown. `minerId` is the
-miner that answered; a delivered answer is reused under a later miner configuration.
+`Explanation` [built] (`src/explain.ts`, from a validated miner answer, research R10):
+
+| Field | Type | Rule |
+| --- | --- | --- |
+| `name`, `from`, `to` | `string` | the candidate (`to` = latest stable at run time) |
+| `minerId` | `string` | the miner that answered; a delivered answer is reused under a later miner configuration |
+| `outcome` | `found` \| `not_found` \| `unavailable` \| `unusable` | `unavailable`: no answer bought (set by the caller); `unusable`: failed validation, never shown as guidance |
+| `reason` | `string?` | why unavailable or unusable |
+| `coverageComplete` | `boolean?` | the miner's own release-coverage statement (found only) |
+| `changes` | `{ kind: breaking \| deprecation \| security_fix, version, change, migration \| null, quote, sourceUrl }[]` | documented changes only, each with a verbatim quote and a plain HTTPS source; breaking first, then deprecations and security fixes, oldest version first (as in the PR Agent) |
+| `introducedAdvisories` | `string[]` | advisories the miner says the target version introduces: always shown as a warning (the PR Agent rejects such answers instead) |
+
+The answer schema has no field saying whether a change affects TypeScript or Rust, so the report does not infer it.
+`found` with no changes is shown as "no documented change with a quote was returned", never "no changes".
 
 ## Purchase and attempt [P2]
 
-Purchase: `{ minerId, amountUsdc, txHash, receiptHash, signalHash, network, chainId, time }`, the explanation it bought.
+`PurchaseReceipt` [built] (`src/record.ts`): `{ minerId, amountUsdc, txHash, receiptHash, signalHash, network, chainId,
+rail?: "escrow", epochId? }` (an escrow payment has no `txHash`; it is billed in ledger epoch `epochId`). It sits on the
+`delivered` attempt row with the miner's raw `answer`, validated again whenever it is shown; the row's `time` is the
+purchase time. One row per `receiptHash`.
 
 Attempt (copied from the PR Agent ledger), keyed by package + exact from + exact to:
 
@@ -143,7 +157,8 @@ and a held lease (FR-009b).
 ## Lease [P2]
 
 `{ token, runId, acquiredAt, expiresAt }` in `lease.json` on the `preflight` branch (research R11). Held by at most one
-run; every record write is a compare-and-swap of the branch head that requires the current token.
+run; every record write is a compare-and-swap from the run's own last commit, so it fails once anything else moved
+the branch. Taking the lease marks any unfinished attempt (`reserved`, `request_sent`) for reconciliation.
 
 ```text
 free ──acquire (CAS)──► held ──release (CAS)──► free

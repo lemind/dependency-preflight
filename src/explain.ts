@@ -43,9 +43,9 @@ export const selectCandidates = (outdated: OutdatedFinding[], maxPurchases: numb
   for (const finding of outdated) {
     const { name, version: from, lockfile } = finding.package;
     const pair = `${name}@${from}->${finding.latest}`;
-    // Direct and runtime in the same member: a package that is direct only as a dev dependency is not eligible,
-    // even if another member reaches it transitively at runtime.
-    const members = finding.package.usages.filter((usage) => usage.direct && usage.runtime).map((usage) => usage.member);
+    // Declared as a runtime dependency by some member: a direct devDependency is not eligible, even when something
+    // else pulls it in at runtime.
+    const members = finding.package.usages.filter((usage) => usage.directRuntime).map((usage) => usage.member);
     const reason =
       finding.gap === "patch"
         ? "patch release only: listed, not explained"
@@ -79,7 +79,7 @@ export const selectCandidates = (outdated: OutdatedFinding[], maxPurchases: numb
       Number(b.key) - Number(a.key) ||
       GAP_ORDER.indexOf(a.gap) - GAP_ORDER.indexOf(b.gap) ||
       a.name.localeCompare(b.name) ||
-      a.from.localeCompare(b.from),
+      semver.compare(a.from, b.from),
   );
   const candidates = ranked.slice(0, maxPurchases);
   const overLimit = ranked.slice(maxPurchases).map(({ name, from, to }) => ({
