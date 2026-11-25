@@ -23,7 +23,8 @@ are in Ethereum Sepolia test USDC.
 
 ## Three scenarios, run on GitHub-hosted runners
 
-All three are test cases we set up ourselves, not findings in someone's live project.
+All three are test cases we set up ourselves, not findings in someone's live project. Commits, receipts and full
+reports: [docs/results](docs/results/README.md).
 
 ### 1. Compromised dependency, then the fix (controlled test case)
 
