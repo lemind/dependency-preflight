@@ -24,7 +24,7 @@ comment updated. P4 (a web page) is optional.
 for Node 24 (`runs.using: node24`). Developed on Node 26.
 
 **Primary Dependencies**: `@actions/core` (inputs, outputs, job summary), `@yarnpkg/parsers` (Yarn 1 and pnpm YAML),
-`semver`; for P2, `viem` and `zod` (≥ 4.6.6; the copied miner schema imports `zod/v3`). Approved 24 Nov. The PR Agent's
+`semver`; for P2, `viem` and `zod` (≥ 4.6.6; the copied miner schema runs on the main `zod` import). Approved 24 Nov. The PR Agent's
 escrow client also needs `@x402/fetch` and `@x402/evm` 2.32.0, pinned exactly (approved 25 Nov, research R9).
 
 **Storage**: none for P1. P2: an append-only JSONL record on a `preflight` branch of the installer's repository,

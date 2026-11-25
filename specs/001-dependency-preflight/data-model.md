@@ -117,7 +117,7 @@ the verdict.
 
 From a validated miner answer (research R10): `{ package, from, to, minerId, outcome: found | not_found | unavailable |
 unusable, changes: { kind: breaking | deprecation | security_fix, version, evidenceType, change, migration?, quote,
-sourceUrl }[], purchase? }`. Changes are shown in the miner's order: the answer schema has no field saying whether a
+sourceUrl }[], purchase? }`. Changes are shown breaking first, then deprecations and security fixes, oldest version first (as in the PR Agent): the answer schema has no field saying whether a
 change affects TypeScript or Rust, so the report does not infer it. Only validated answers are shown. `minerId` is the
 miner that answered; a delivered answer is reused under a later miner configuration.
 

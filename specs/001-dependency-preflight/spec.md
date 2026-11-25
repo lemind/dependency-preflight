@@ -49,7 +49,7 @@ For outdated direct runtime dependencies (Solana packages first), the check buys
 
 **Acceptance Scenarios**:
 
-1. **Given** a locked `@coral-xyz/anchor` 0.29.0 and a newer release, **When** the check runs with a wallet configured, **Then** the report lists the breaking changes between the two versions with quotes and links, in the order the miner returns them, and shows the price paid and the receipt.
+1. **Given** a locked `@coral-xyz/anchor` 0.29.0 and a newer release, **When** the check runs with a wallet configured, **Then** the report lists the breaking changes between the two versions with quotes and links, breaking first, then deprecations and security fixes, oldest version first, and shows the price paid and the receipt.
 2. **Given** no wallet configured, **When** the check runs, **Then** no purchase is attempted. The report says which upgrades would have been explained and links each package's release notes.
 3. **Given** the same package and version pair was already answered in an earlier run, **When** the check runs again, **Then** the saved answer is reused and nothing is bought twice.
 4. **Given** the per-run spending cap would be exceeded, **When** further upgrades remain, **Then** the check stops buying, completes the report, and lists the upgrades left unexplained and why.

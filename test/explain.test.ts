@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { assess } from "../src/assess.js";
-import { migrationQuestion, selectCandidates } from "../src/explain.js";
+import { MAX_ANSWER_CHARACTERS, migrationQuestion, readAnswer, selectCandidates, type ExplanationCandidate } from "../src/explain.js";
 import type { LockedPackage, Usage } from "../src/lockfiles.js";
 import { DEFAULT_KEY_PACKAGES, type OutdatedFinding } from "../src/verdict.js";
 import { FIXTURES, loadRecording, replayFetcher } from "./helpers.js";
@@ -143,5 +143,121 @@ describe("selectCandidates (T021, FR-007, FR-010)", () => {
       ["@solana/web3.js", "1.98.0", "3.2.1", "major"],
     ]);
     expect(candidates[0].locations).toEqual([{ lockfile: "sdk/yarn.lock", members: ["sdk"] }]);
+  });
+});
+
+// Shape of miner 7314's migration answer, as in the PR Agent's tests (test/action-miner-assessment.test.ts).
+const anchor: ExplanationCandidate = {
+  name: "@coral-xyz/anchor",
+  from: "0.29.0",
+  to: "0.32.1",
+  gap: "major",
+  key: true,
+  question: migrationQuestion("@coral-xyz/anchor", "0.29.0", "0.32.1"),
+  locations: [{ lockfile: "sdk/yarn.lock", members: ["sdk"] }],
+};
+const change = (kind: string, version: string, text: string, overrides: Record<string, unknown> = {}) => ({
+  kind, version, evidenceType: "documented", change: text, excerpt: `${text}.`, sourceId: "s1", migration: null, ...overrides,
+});
+const answer = () => ({
+  outcome: "found",
+  request: { ecosystem: "npm", package: "@coral-xyz/anchor", fromResolved: "0.29.0", toResolved: "0.32.1" },
+  changes: [change("breaking", "0.30.0", "IDL format changed", { migration: "Regenerate the IDL with anchor 0.30." })],
+  coverage: { complete: false },
+  security: { status: "complete", advisories: [] as Record<string, unknown>[] },
+  sources: [{ id: "s1", url: "https://github.com/coral-xyz/anchor/blob/master/CHANGELOG.md" }],
+});
+
+describe("readAnswer (T022, FR-008, research R10)", () => {
+  it("shows a documented change with its migration, verbatim quote and source", () => {
+    const explanation = readAnswer(answer(), anchor, "7314");
+    expect(explanation).toEqual({
+      name: "@coral-xyz/anchor", from: "0.29.0", to: "0.32.1", minerId: "7314", outcome: "found", coverageComplete: false,
+      changes: [{
+        kind: "breaking", version: "0.30.0", change: "IDL format changed", migration: "Regenerate the IDL with anchor 0.30.",
+        quote: "IDL format changed.", sourceUrl: "https://github.com/coral-xyz/anchor/blob/master/CHANGELOG.md",
+      }],
+      introducedAdvisories: [],
+    });
+  });
+
+  it("accepts the answer as a JSON string too, as the Engine may return it", () => {
+    expect(readAnswer(JSON.stringify(answer()), anchor, "7314").outcome).toBe("found");
+  });
+
+  it("orders breaking, then deprecations, then security fixes, oldest version first", () => {
+    const miner = answer();
+    miner.changes = [
+      change("security_fix", "0.30.1", "sec"), change("deprecation", "0.31.0", "dep"), change("breaking", "0.32.0", "b2"),
+      change("breaking", "0.30.0", "b1"),
+    ] as typeof miner.changes;
+    expect(readAnswer(miner, anchor, "7314").changes.map((entry) => `${entry.kind}:${entry.version}`)).toEqual([
+      "breaking:0.30.0", "breaking:0.32.0", "deprecation:0.31.0", "security_fix:0.30.1",
+    ]);
+  });
+
+  it("drops changes that are inferred, unquoted or outside (from, to]; never shows them as guidance", () => {
+    const miner = answer();
+    miner.changes = [
+      change("breaking", "0.30.0", "inferred", { evidenceType: "inferred" }),
+      change("breaking", "0.30.0", "no quote", { excerpt: null }),
+      change("breaking", "0.29.0", "already locked"),
+      change("breaking", "0.33.0", "after the target"),
+      change("breaking", "next", "not a version"),
+    ] as typeof miner.changes;
+    const explanation = readAnswer(miner, anchor, "7314");
+    // Found with nothing shown: the report says no documented change with a quote came back, never "no changes".
+    expect(explanation).toMatchObject({ outcome: "found", changes: [] });
+  });
+
+  it("states not_found as its own outcome", () => {
+    expect(readAnswer({ ...answer(), outcome: "not_found", request: null, coverage: null, changes: [] }, anchor, "7314"))
+      .toMatchObject({ outcome: "not_found", changes: [] });
+  });
+
+  it("keeps a vulnerability the miner says the target introduces, as a warning", () => {
+    const miner = answer();
+    miner.security.advisories = [{ id: "GHSA-xxxx-yyyy-zzzz", aliases: [], sourceId: "s1", fromAffected: "no",
+      targetAffected: "yes", conclusion: "introduced_by_upgrade" }];
+    expect(readAnswer(miner, anchor, "7314").introducedAdvisories).toEqual(["GHSA-xxxx-yyyy-zzzz"]);
+  });
+
+  it.each([
+    ["another package", (miner: ReturnType<typeof answer>) => void (miner.request.package = "@coral-xyz/borsh"), /not @coral-xyz\/anchor/],
+    ["another target version", (miner: ReturnType<typeof answer>) => void (miner.request.toResolved = "0.31.0"), /0.31.0, not/],
+    ["a plain-HTTP source", (miner: ReturnType<typeof answer>) => void (miner.sources[0].url = "http://example.org/x"), /plain HTTPS/],
+    ["a source with credentials", (miner: ReturnType<typeof answer>) => void (miner.sources[0].url = "https://user:pw@example.org/x"), /plain HTTPS/],
+    ["a missing source", (miner: ReturnType<typeof answer>) => void (miner.sources = []), /missing/],
+    ["an unknown outcome", (miner: ReturnType<typeof answer>) => void (miner.outcome = "temporarily_unavailable"), /expected format/],
+    ["a found answer without coverage", (miner: ReturnType<typeof answer>) => void ((miner as { coverage: unknown }).coverage = null), /coverage/],
+  ])("is unusable with %s, and says why", (_case, mutate, reason) => {
+    const miner = answer();
+    mutate(miner);
+    const explanation = readAnswer(miner, anchor, "7314");
+    expect(explanation.outcome).toBe("unusable");
+    expect(explanation.changes).toEqual([]);
+    expect(explanation.reason).toMatch(reason);
+  });
+
+  it("is unusable, without validating it, when an adversarial answer is oversized", () => {
+    const miner = answer();
+    miner.changes = Array.from({ length: 20_000 }, (_, index) => change("breaking", "0.30.0", `x${index}`.padEnd(60, "x")));
+    const explanation = readAnswer(miner, anchor, "7314");
+    expect(explanation.outcome).toBe("unusable");
+    expect(explanation.reason).toMatch(/answer too large \(\d+ characters, limit 1000000\)/);
+    expect(readAnswer("x".repeat(MAX_ANSWER_CHARACTERS + 1), anchor, "7314").reason).toMatch(/too large/);
+  });
+
+  it("is unusable when the answer is not JSON or is empty", () => {
+    expect(readAnswer("<html>", anchor, "7314")).toMatchObject({ outcome: "unusable", reason: expect.stringMatching(/not JSON/) });
+    expect(readAnswer(undefined, anchor, "7314")).toMatchObject({ outcome: "unusable", reason: expect.stringMatching(/expected format/) });
+  });
+
+  it("caps long texts so a single change cannot flood the report", () => {
+    const miner = answer();
+    miner.changes = [change("breaking", "0.30.0", "y".repeat(10_000))] as typeof miner.changes;
+    const [shown] = readAnswer(miner, anchor, "7314").changes;
+    expect(shown.change).toHaveLength(2000);
+    expect(shown.quote).toHaveLength(2000);
   });
 });

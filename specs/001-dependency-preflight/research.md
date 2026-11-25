@@ -104,13 +104,15 @@ rationale, alternatives. "Verified" means run or measured on the date given.
 - **Decision**: ask `POST https://devnode.telegraphprotocol.com/engine/v1/ask/7314` with
   `{"method":"GET","endpoint":"/answer","payload":{"query":"What changed in X from A to B?"}}`. Validate with the
   schema in the PR Agent's `bot/src/miner-assessment.ts` (`outcome` found / not_found, `changes[]` with kind, version,
-  evidence type, change, excerpt, source id, migration; `sources[]`), not `assessment.ts` as the handoff says. Import
-  it from `zod/v3` under zod 4.6. Unusable answers are dropped and counted against caps; `not_found` and unavailable are
+  evidence type, change, excerpt, source id, migration; `sources[]`), not `assessment.ts` as the handoff says. It
+  is written against zod 3 but uses only APIs zod 4 keeps, so it runs on the main `zod` 4.6.7 import, the patched
+  code path (decided 25 Nov, in place of the planned `zod/v3` import). Answers over 1,000,000 characters are not
+  validated at all. Unusable answers are dropped and counted against caps; `not_found` and unavailable are
   stated, never "no changes".
 - **Candidates** (FR-007): outdated direct runtime dependencies with a minor or major gap, key packages first.
   Transitive and dev-only packages are never bought, even when they match a key-package pattern.
 - **No TypeScript/Rust ordering**: the schema's changes carry kind, version, evidence type, change, excerpt, source
-  and migration, but no field for the affected client. Changes are shown in the miner's order; the report does not
+  and migration, but no field for the affected client. Changes are shown breaking first, then deprecations and security fixes, oldest version first (as in the PR Agent); the report does not
   infer applicability from wording. (The spec's earlier "TypeScript before Rust" promise was removed, 25 Nov.)
 
 ## R11. Purchase record, lease and attempt states (P2)
