@@ -68,7 +68,7 @@ export const renderComment = (comparison: Comparison | undefined, head: { verdic
     for (const status of ["new", "unverified", "resolved", "open"] as FindingStatus[]) {
       const relevant = comparison.findings.filter((finding) => finding.status === status && mattersToVerdict(finding));
       if (!relevant.length) continue;
-      lines.push(`**${HEADING[status]}** (${relevant.length} that affect the verdict)`, "", ...relevant.slice(0, MAX_LISTED).map(describe));
+      lines.push(`**${HEADING[status]}** (${relevant.length} that ${relevant.length === 1 ? "affects" : "affect"} the verdict)`, "", ...relevant.slice(0, MAX_LISTED).map(describe));
       if (relevant.length > MAX_LISTED) lines.push(`- … ${relevant.length - MAX_LISTED} more in the full report`);
       lines.push("");
     }
