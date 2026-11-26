@@ -1,8 +1,8 @@
 # Contract: the `dependency-preflight` Action
 
 The Action's public interface: `action.yml` inputs and outputs, environment, exit behaviour and the report.
-**built** items exist on PR #2; **P2 built** is in `action.yml` and tested offline, not yet run with a wallet (T025);
-**P3 built** (the pull request re-check) ran on a real pull request on 25 Nov (T032).
+**built** items exist on main; **P2 built** ran with a wallet on 25 Nov on commit `0670854` (T025), not yet on the
+pinned commit; **P3 built** (the pull request re-check) ran on a real pull request on 25 Nov (T032).
 
 ## Inputs
 
@@ -17,9 +17,9 @@ The Action's public interface: `action.yml` inputs and outputs, environment, exi
 | `max-price-per-call-usdc` | `0.05` | P2 built | per-call cap |
 | `budget-cap-usdc` | `0.30` | P2 built | per-run cap |
 | `max-purchases` | `10` | P2 built | upgrades explained per run (bought or reused) |
-| `chain-id` | `11155111` | P2 built | the only payment chain allowed (Ethereum Sepolia) |
-| `usdc-address` | `0xcc194e1a843B658526D0D5C431f670028582Ae17` | P2 built | the only USDC contract allowed on that chain |
-| `github-token` | `${{ github.token }}` | P2 built | writes the purchase record and lease (`contents: write`); without write access nothing is bought (FR-009b). P3 will use it for the comment (`pull-requests: write`) |
+| `chain-id` | `11155111` | P2 built | payment chain; only Ethereum Sepolia (11155111) or Base Sepolia (84532), anything else fails the step |
+| `usdc-address` | `0xcc194e1a843B658526D0D5C431f670028582Ae17` | P2 built | USDC contract enforced for direct (exact) payments; escrow payments are checked for chain and amount only |
+| `github-token` | `${{ github.token }}` | P2 built | writes the purchase record and lease (`contents: write`); without write access nothing is bought (FR-009b). P3 uses it to read the base and post the comment (`pull-requests: write`) |
 
 ## Environment
 
@@ -62,7 +62,7 @@ Markdown in the job summary, in this order:
 6. Outdated key packages: locked, latest, gap, runtime/dev, where, link to the versions page.
 7. Collapsed: dev-only advisories; advisories in unreachable lock entries; other outdated direct dependencies (patch
    gaps listed only); not assessed items (outside scope or identity not verifiable) and, separately, not checked items
-   (a lookup failed; planned split, T034); the verdict rules.
+   (a lookup failed, a rerun may complete it), each with its own total (T034); the verdict rules.
 
 Tables are capped at 50 rows with a "… N more" line. Text from lockfiles and advisories is escaped for table cells.
 
@@ -82,4 +82,5 @@ per path (see research R12). A base that can't be assessed is stated; forks and 
 - Permissions: `contents: read` for P1. P2 adds `contents: write` (record); P3 adds `pull-requests: write` (comment).
 - P2: a `concurrency` group per repository and a job `timeout-minutes` shorter than the lease expiry. The lease on
   the `preflight` branch protects purchases even without them (research R11).
-- Pull requests from forks get no secrets: free mode, summary only.
+- Pull requests from forks get no secrets: free mode, summary only. The Action also refuses paid mode itself on
+  `pull_request_target` and for a pull request from a fork, even when the secret is present.

@@ -33,9 +33,20 @@ export type OutdatedFinding = {
   gap: Exclude<UpgradeGap, "none">;
 };
 
+/** A locked version whose advisory lookup did not complete (timeout, unavailable source): rerunning may fix it (FR-017). */
 export type NotChecked = {
   name: string;
-  version?: string;
+  version: string;
+  lockfile: string;
+  runtime: boolean;
+  unreachable: boolean;
+  reason: string;
+};
+
+/** A dependency outside what this check covers, or whose identity can't be verified: Git, local path, URL (FR-017). */
+export type NotAssessed = {
+  name: string;
+  source: string;
   lockfile: string;
   runtime: boolean;
   unreachable: boolean;
@@ -52,6 +63,7 @@ export type Assessment = {
   advisories: AdvisoryFinding[];
   outdated: OutdatedFinding[];
   notChecked: NotChecked[];
+  notAssessed: NotAssessed[];
   /** Direct dependencies whose latest release could not be looked up (registry errors). */
   latestUnknown: string[];
   discovery: Discovery;
@@ -138,14 +150,14 @@ export const decide = (
       removedFromRegistry: record && "versions" in record ? !record.versions.has(locked.version) : undefined,
     });
   }
-  for (const dependency of unassessable)
-    notChecked.push({
-      name: dependency.name,
-      lockfile: dependency.lockfile,
-      runtime: isRuntime(dependency.usages),
-      unreachable: dependency.usages.length === 0,
-      reason: `not assessed: ${dependency.reason} (${dependency.source})`,
-    });
+  const notAssessed: NotAssessed[] = unassessable.map((dependency) => ({
+    name: dependency.name,
+    source: dependency.source,
+    lockfile: dependency.lockfile,
+    runtime: isRuntime(dependency.usages),
+    unreachable: dependency.usages.length === 0,
+    reason: dependency.reason,
+  }));
 
   const outdated: OutdatedFinding[] = [];
   const registryFailures: string[] = [];
@@ -194,6 +206,14 @@ export const decide = (
   if (otherRuntime.length) reviewReasons.push(`advisories in ${plural(otherRuntime.length, "runtime dependency version")}`);
   const uncheckedRuntime = notChecked.filter((item) => item.runtime);
   if (uncheckedRuntime.length) reviewReasons.push(`${plural(uncheckedRuntime.length, "runtime dependency", "runtime dependencies")} could not be checked`);
+  const unassessedRuntime = notAssessed.filter((item) => item.runtime);
+  if (unassessedRuntime.length)
+    reviewReasons.push(`${plural(unassessedRuntime.length, "runtime dependency", "runtime dependencies")} not assessed (Git, local path or unverifiable source)`);
+  // A key package whose latest release couldn't be looked up can't be called current.
+  const latestUnknown = [...new Set(registryFailures.map((failure) => failure.slice(0, failure.indexOf(": "))))];
+  const keyLatestUnknown = latestUnknown.filter((name) => isKeyPackage(name, keyPackages));
+  if (keyLatestUnknown.length)
+    reviewReasons.push(`latest release unknown for key ${keyLatestUnknown.length === 1 ? "package" : "packages"}: ${keyLatestUnknown.join(", ")}`);
   const outdatedKey = outdated.filter((finding) => finding.key && finding.gap === "major");
   if (outdatedKey.length)
     reviewReasons.push(
@@ -214,12 +234,11 @@ export const decide = (
   for (const file of discovery.otherDependencyFiles) coverageReasons.push(`${file.path}: ${file.ecosystem} dependencies are not assessed`);
   if (discovery.manifestsWithoutLockfile.length)
     coverageReasons.push(`${plural(discovery.manifestsWithoutLockfile.length, "package.json", "package.json files")} without a lockfile: versions could not be pinned`);
-  const lookupFailures = notChecked.filter((item) => item.version !== undefined).length;
-  if (lookupFailures) coverageReasons.push(`${plural(lookupFailures, "package version")} not checked against advisories`);
-  if (unassessable.length) coverageReasons.push(`${plural(unassessable.length, "dependency", "dependencies")} not assessed (Git, local path or unverifiable source)`);
+  if (notChecked.length) coverageReasons.push(`${plural(notChecked.length, "package version")} not checked against advisories`);
+  if (notAssessed.length) coverageReasons.push(`${plural(notAssessed.length, "dependency", "dependencies")} not assessed (Git, local path or unverifiable source)`);
   if (advisoryCheck.detailsMissing.length)
     coverageReasons.push(`${plural(advisoryCheck.detailsMissing.length, "advisory record")} could not be retrieved in full`);
-  if (registryFailures.length) coverageReasons.push(`latest version unknown for ${plural(registryFailures.length, "direct dependency", "direct dependencies")}`);
+  if (latestUnknown.length) coverageReasons.push(`latest version unknown for ${plural(latestUnknown.length, "direct dependency", "direct dependencies")}`);
   const coverage: Coverage = coverageFailed ? "failed" : coverageReasons.length ? "partial" : "complete";
 
   return {
@@ -230,7 +249,8 @@ export const decide = (
     advisories: rankAdvisories(advisories),
     outdated,
     notChecked,
-    latestUnknown: registryFailures.map((failure) => failure.slice(0, failure.indexOf(": "))),
+    notAssessed,
+    latestUnknown,
     discovery,
     lockedVersionCount: new Set(packages.map(packageKey)).size,
   };
