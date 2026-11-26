@@ -34,10 +34,10 @@ inputs:
     description: "Most upgrades explained in one run (bought or reused)"
     default: "10"
   chain-id:
-    description: "Payment chain: Ethereum Sepolia (11155111) or Base Sepolia (84532); any other chain is refused"
+    description: "The only payment chain allowed (Ethereum Sepolia)"
     default: "11155111"
   usdc-address:
-    description: "USDC contract enforced for direct payments; escrow payments are checked for chain and amount"
+    description: "The only USDC contract allowed on that chain"
     default: "0xcc194e1a843B658526D0D5C431f670028582Ae17"
 outputs:
   verdict:

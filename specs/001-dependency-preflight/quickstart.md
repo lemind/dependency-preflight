@@ -40,7 +40,6 @@ escrow deposit, stored as a repository secret, and write access for the purchase
 ```yaml
 permissions:
   contents: write          # the purchase record on the preflight branch
-  pull-requests: write     # the re-check comment on pull requests
 concurrency:
   group: dependency-preflight-${{ github.repository }}
   cancel-in-progress: false

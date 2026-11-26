@@ -38,11 +38,7 @@ export type Comparison = {
   counts: Record<FindingStatus, number>;
 };
 
-type Entry = Omit<ComparedFinding, "status" | "reason" | "baseVersion" | "headVersion"> & {
-  version: string;
-  /** Names the package is declared under (aliases, overrides): a head entry that isn't assessed carries one of these. */
-  localNames: string[];
-};
+type Entry = Omit<ComparedFinding, "status" | "reason" | "baseVersion" | "headVersion"> & { version: string };
 
 const entries = (assessment: Assessment): Entry[] => {
   const list: Entry[] = [];
@@ -58,7 +54,6 @@ const entries = (assessment: Assessment): Entry[] => {
           name: finding.package.name,
           lockfile: finding.package.lockfile,
           version: finding.package.version,
-          localNames: finding.package.localNames.map((local) => local.name),
           ids: group.ids,
           tier: finding.tier,
           severity: group.malicious ? "critical" : group.severity,
@@ -74,7 +69,6 @@ const entries = (assessment: Assessment): Entry[] => {
         name: finding.package.name,
         lockfile: finding.package.lockfile,
         version: finding.package.version,
-        localNames: finding.package.localNames.map((local) => local.name),
         ids: [],
         malicious: false,
         key: finding.key,
@@ -92,12 +86,7 @@ const unverifiedReason = (entry: Entry, head: Assessment): string | undefined =>
   const lockfile = head.discovery.lockfiles.find((report) => report.path === entry.lockfile);
   if (!lockfile) return `${entry.lockfile} is not in the head`;
   if (lockfile.status !== "assessed") return `${entry.lockfile} was not assessed on the head: ${lockfile.reason}`;
-  // Moved to Git, a path, a URL or an unverifiable entry: gone from the findings because it wasn't looked up.
-  const unassessed = head.notAssessed.find(
-    (item) => (item.name === entry.name || entry.localNames.includes(item.name)) && item.lockfile === entry.lockfile,
-  );
-  if (unassessed) return `${entry.name} is not assessed on the head: ${unassessed.reason}`;
-  if (entry.kind === "advisory" && head.notChecked.some((item) => item.name === entry.name && item.lockfile === entry.lockfile))
+  if (entry.kind === "advisory" && head.notChecked.some((item) => item.name === entry.name && item.lockfile === entry.lockfile && item.version !== undefined))
     return `the advisory lookup for ${entry.name} did not complete on the head`;
   if (entry.kind === "outdated" && head.latestUnknown.includes(entry.name))
     return `the latest release of ${entry.name} could not be looked up on the head`;
@@ -113,7 +102,7 @@ export const compare = (base: Assessment, head: Assessment): Comparison => {
   const matchedHead = new Set<Entry>();
 
   for (const entry of baseEntries) {
-    const { version, localNames: _localNames, ...fields } = entry;
+    const { version, ...fields } = entry;
     const match = headEntries.find((candidate) => sameFinding(entry, candidate));
     if (match) {
       matchedHead.add(match);
@@ -126,7 +115,7 @@ export const compare = (base: Assessment, head: Assessment): Comparison => {
   }
   for (const entry of headEntries) {
     if (matchedHead.has(entry) || baseEntries.some((candidate) => sameFinding(candidate, entry))) continue;
-    const { version, localNames: _localNames, ...fields } = entry;
+    const { version, ...fields } = entry;
     findings.push({ ...fields, headVersion: version, status: "new" });
   }
 
