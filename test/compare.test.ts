@@ -108,6 +108,17 @@ describe("compare: identity", () => {
     expect(statuses(base, head)).toEqual(["unverified advisory nanoid (nanoid is not assessed on the head: Git dependency)"]);
   });
 
+  it("an aliased package moved to a Git source on the head is not verified, not resolved", () => {
+    const aliased = advisory("lodash", "4.17.20", group("GHSA-p6mc-m468-83gw"));
+    aliased.package.localNames = [{ name: "bar", kind: "alias" }];
+    const head = assessment({
+      notAssessed: [{ name: "bar", source: "github:someone/lodash#abc", lockfile: LOCKFILE, runtime: true, unreachable: false, reason: "Git dependency" }],
+    });
+    expect(statuses(assessment({ advisories: [aliased] }), head)).toEqual([
+      "unverified advisory lodash (lodash is not assessed on the head: Git dependency)",
+    ]);
+  });
+
   it("a lockfile removed on the head can't resolve its findings", () => {
     const base = assessment({ advisories: [advisory("nanoid", "3.3.4", group("GHSA-mwcw-c2x4-8c55"))] });
     expect(statuses(base, assessment({ discovery: { lockfiles: [], otherDependencyFiles: [], manifestsWithoutLockfile: [] } }))).toEqual([
