@@ -47,6 +47,9 @@ export interface Purchase {
   explorerBaseUrl: string;
 }
 
+/** The only chains paid on: Ethereum Sepolia and Base Sepolia, both testnets. Anything else is refused. */
+export const TESTNET_CHAIN_IDS = [11155111, 84532];
+
 // Transaction explorers for the chains the devnode has quoted.
 const EXPLORERS: Record<number, string> = {
   11155111: "https://sepolia.etherscan.io",
@@ -352,6 +355,8 @@ export class IntelligenceClient {
   ) => Promise<Response>;
 
   constructor(deps: IntelligenceClientDeps) {
+    if (!TESTNET_CHAIN_IDS.includes(deps.chainId))
+      throw new Error(`chain-id ${deps.chainId} is refused: payments are testnet only (${TESTNET_CHAIN_IDS.join(" or ")})`);
     this.nodeUrl = deps.nodeUrl.replace(/\/$/, "");
     this.network = `eip155:${deps.chainId}`;
     this.usdcAddress = deps.usdcAddress;
