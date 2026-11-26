@@ -96,6 +96,66 @@ describe("partial and failed coverage are never an empty clean report", () => {
     expect(report).toContain("`programs/Cargo.lock`: Rust, not assessed");
   });
 
+  it("not assessed and not checked are separate lists, totals and report sections (T034, FR-017)", async () => {
+    const root = writeTree({
+      "package.json": { dependencies: { "@solana/web3.js": "1.95.8", safe: "github:someone/safe#main" } },
+      "package-lock.json": {
+        lockfileVersion: 3,
+        packages: {
+          "": { dependencies: { "@solana/web3.js": "1.95.8", safe: "github:someone/safe#main" } },
+          "node_modules/@solana/web3.js": { version: "1.95.8", resolved: tarball("@solana/web3.js", "1.95.8") },
+          "node_modules/safe": { version: "1.0.0", resolved: "git+ssh://git@github.com/someone/safe.git#0123456789abcdef" },
+        },
+      },
+    });
+    const render = (assessment: Awaited<ReturnType<typeof assess>>) =>
+      renderReport(assessment, { path: ".", ranAt: new Date(), keyPackages: DEFAULT_KEY_PACKAGES });
+
+    // A Git dependency is outside the check: not assessed, and a rerun won't change that.
+    const answered = await assess(root, DEFAULT_KEY_PACKAGES, replayFetcher(controlled, web3Registry));
+    expect(answered.notChecked).toEqual([]);
+    expect(answered.notAssessed).toEqual([expect.objectContaining({ name: "safe", runtime: true, reason: "Git dependency" })]);
+    expect(answered.verdict).toBe("review");
+    expect(answered.verdictReasons.review).toContain("1 runtime dependency not assessed (Git, local path or unverifiable source)");
+    expect(answered.coverage).toBe("partial");
+    const answeredReport = render(answered);
+    expect(answeredReport).toContain("| Not assessed (outside this check's scope) | 1 |");
+    expect(answeredReport).toContain("| Not checked (a lookup failed) | 0 |");
+    expect(answeredReport).toContain("<summary>Not assessed (1): outside what this check covers</summary>");
+    expect(answeredReport).toMatch(/- `safe` in `package-lock\.json` \(runtime\): Git dependency, `git\+ssh:/);
+    expect(answeredReport).not.toContain("<summary>Not checked");
+
+    // OSV down: the registry package is not checked (a rerun may complete it); the Git one is still not assessed.
+    const outage = await assess(root, DEFAULT_KEY_PACKAGES, offline);
+    expect(outage.notChecked).toEqual([expect.objectContaining({ name: "@solana/web3.js", version: "1.95.8", runtime: true })]);
+    expect(outage.notAssessed).toHaveLength(1);
+    expect(outage.verdictReasons.review).toEqual(
+      expect.arrayContaining(["1 runtime dependency could not be checked", "1 runtime dependency not assessed (Git, local path or unverifiable source)"]),
+    );
+    const outageReport = render(outage);
+    // One package, both lookups failed: one line, counted once.
+    expect(outageReport).toContain("| Not checked (a lookup failed) | 1 |");
+    expect(outageReport).toContain("<summary>Not checked (1): a lookup failed; a rerun may complete it</summary>");
+    expect(outageReport).toMatch(/- `@solana\/web3\.js@1\.95\.8` in `package-lock\.json` \(runtime\): .*; the latest release could not be looked up either/);
+  });
+
+  it("a lockfile source can't break out of its report line", async () => {
+    const hostile = "git+ssh://x\n\n</details>\n\n![t](https://evil.example/x.png)";
+    const root = writeTree({
+      "package.json": { dependencies: { safe: "github:someone/safe#main" } },
+      "package-lock.json": {
+        lockfileVersion: 3,
+        packages: { "": { dependencies: { safe: "github:someone/safe#main" } }, "node_modules/safe": { version: "1.0.0", resolved: hostile } },
+      },
+    });
+    const report = renderReport(await assess(root, DEFAULT_KEY_PACKAGES, replayFetcher(controlled, web3Registry)), {
+      path: ".", ranAt: new Date(), keyPackages: DEFAULT_KEY_PACKAGES,
+    });
+    const line = report.split("\n").find((candidate) => candidate.startsWith("- `safe`"));
+    expect(line).toContain("git+ssh://x &lt;/details> ![t]");
+    expect(report.match(/<\/details>/g)).toHaveLength(report.match(/<details>/g)!.length);
+  });
+
   it("advisory details that can't be retrieved: still malicious by id, coverage partial", async () => {
     const withoutRecords = replayFetcher({ hits: controlled.hits, vulns: {} }, web3Registry);
     const assessment = await run("controlled/compromised-web3js-1.95.6", withoutRecords);
@@ -218,6 +278,15 @@ describe("verdict rules", () => {
     expect(await verdictOf(project({ "@coral-xyz/anchor": "0.29.0" }), anchor)).toBe("review");
     const web3 = { "@solana/web3.js": { latest: "1.98.4", versions: ["1.95.8", "1.98.4"] } };
     expect(await verdictOf(project({ "@solana/web3.js": "1.95.8" }), web3)).toBe("ready");
+  });
+  it("latest release unknown: review for a key package, coverage partial only for others", async () => {
+    const key = await assess(project({ "@coral-xyz/anchor": "0.29.0" }), DEFAULT_KEY_PACKAGES, replayFetcher(recording, {}));
+    expect(key.verdict).toBe("review");
+    expect(key.verdictReasons.review).toContain("latest release unknown for key package: @coral-xyz/anchor");
+    expect(key.coverageReasons).toContain("latest version unknown for 1 direct dependency");
+    const other = await assess(project({ "plain-dep": "1.0.0" }), DEFAULT_KEY_PACKAGES, replayFetcher(recording, {}));
+    expect(other.verdict).toBe("ready");
+    expect(other.coverage).toBe("partial");
   });
   it("lock entries no member reaches: advisories listed but not in the verdict; a malicious one still blocks", async () => {
     const unreachable = (name: string, version: string) =>

@@ -53,6 +53,18 @@ const receiptOf = (purchase: Purchase): PurchaseReceipt => ({
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error)).slice(0, 300);
 
+/**
+ * Why this event must not spend the wallet, if it must not. `pull_request_target` gives the base repository's
+ * secrets to a run any pull request can trigger; a pull request from a fork never spends, even where a repository
+ * opts in to passing secrets to forks.
+ */
+export const paidEventRefusal = (eventName: string | undefined, fromFork: boolean): string | undefined =>
+  eventName === "pull_request_target"
+    ? "pull_request_target event: paid explanations are never bought on it"
+    : fromFork
+      ? "pull request from a fork: paid explanations are never bought for it"
+      : undefined;
+
 /** Free mode: nothing bought; the report lists what would be explained (FR-011). */
 export const freeUpgrades = (selection: CandidateSelection, freeReason: string): UpgradeResult => ({
   mode: "free",

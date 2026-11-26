@@ -646,3 +646,11 @@ describe("IntelligenceClient.buy via Telegraph escrow", () => {
     expect(paid).not.toHaveBeenCalled();
   });
 });
+
+describe("IntelligenceClient chain guard", () => {
+  it("refuses a mainnet chain id before anything is asked or paid", () => {
+    expect(() => makeClient({ chainId: 1 })).toThrow(/chain-id 1 is refused: payments are testnet only/);
+    expect(() => makeClient({ chainId: 8453 })).toThrow(/testnet only/);
+    expect(() => makeClient({ chainId: 84532 })).not.toThrow();
+  });
+});

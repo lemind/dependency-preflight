@@ -149,10 +149,33 @@ const upgradeLines = (upgrades: UpgradeResult): string[] => {
   return lines;
 };
 
+const usedAt = (item: { unreachable: boolean; runtime: boolean }): string => (item.unreachable ? "unreachable" : item.runtime ? "runtime" : "dev");
+
+/** Outside what this check covers: unsupported or unparseable lockfiles, other ecosystems, manifests without a lockfile, and Git, path or URL dependencies. */
+const notAssessedLines = (assessment: Assessment): string[] => [
+  ...assessment.discovery.lockfiles.filter((report) => report.status !== "assessed").map((report) => `${code(report.path)}: ${cell(report.reason)}`),
+  ...assessment.discovery.otherDependencyFiles.map((file) => `${code(file.path)}: ${file.ecosystem}, not assessed`),
+  ...assessment.discovery.manifestsWithoutLockfile.map((path) => `${code(path)}: no lockfile, versions not pinned`),
+  // Source and name come from the lockfile: cell() keeps them on one line and inert.
+  ...assessment.notAssessed.map((item) => `${code(cell(item.name))} in ${code(item.lockfile)} (${usedAt(item)}): ${cell(item.reason)}, ${code(cell(item.source))}`),
+];
+
+/** Lookups that failed, one line per locked version; a failed latest-release lookup joins that package's line. */
+const notCheckedLines = (assessment: Assessment): string[] => {
+  const latestUnknown = new Set(assessment.latestUnknown);
+  const lines = assessment.notChecked.map((item) => {
+    const alsoLatest = latestUnknown.delete(item.name) ? "; the latest release could not be looked up either" : "";
+    return `${code(cell(`${item.name}@${item.version}`))} in ${code(item.lockfile)} (${usedAt(item)}): ${cell(item.reason)}${alsoLatest}`;
+  });
+  return [...lines, ...[...latestUnknown].map((name) => `${code(cell(name))}: the latest release could not be looked up`)];
+};
+
 /** Renders the assessment as one Markdown report: verdict and coverage first, then the findings in ranked order. */
 export const renderReport = (assessment: Assessment, context: ReportContext): string => {
   const lines: string[] = [];
   const { discovery } = assessment;
+  const notAssessed = notAssessedLines(assessment);
+  const notChecked = notCheckedLines(assessment);
   lines.push(`## dependency-preflight: ${VERDICT_LABEL[assessment.verdict]} · coverage: **${assessment.coverage}**`, "");
   if (context.caseLabel) lines.push(`> **${cell(context.caseLabel)}**`, "");
   const target = [context.repository, context.commit ? `at ${code(context.commit.slice(0, 12))}` : undefined].filter(Boolean).join(" ");
@@ -171,7 +194,8 @@ export const renderReport = (assessment: Assessment, context: ReportContext): st
     `| Lockfiles assessed | ${assessedLockfiles.map((report) => `${code(report.path)} (${report.format}, ${report.members.length} ${report.members.length === 1 ? "member" : "members"})`).join(", ") || "none"} |`,
     `| Locked package versions | ${assessment.lockedVersionCount} |`,
     `| With advisories | ${assessment.advisories.length} (${maliciousCount} malicious) |`,
-    `| Not checked or not assessed | ${assessment.notChecked.length} |`,
+    `| Not assessed (outside this check's scope) | ${notAssessed.length} |`,
+    `| Not checked (a lookup failed) | ${notChecked.length} |`,
     "",
   );
 
@@ -229,18 +253,16 @@ export const renderReport = (assessment: Assessment, context: ReportContext): st
       "",
     );
 
-  const notAssessedFiles = [
-    ...discovery.lockfiles.filter((report) => report.status !== "assessed").map((report) => `${code(report.path)}: ${cell(report.reason)}`),
-    ...discovery.otherDependencyFiles.map((file) => `${code(file.path)}: ${file.ecosystem}, not assessed`),
-    ...discovery.manifestsWithoutLockfile.map((path) => `${code(path)}: no lockfile, versions not pinned`),
-  ];
-  if (notAssessedFiles.length || assessment.notChecked.length) {
-    lines.push(`<details><summary>Not checked or not assessed (${notAssessedFiles.length + assessment.notChecked.length})</summary>`, "");
-    for (const line of notAssessedFiles.slice(0, MAX_ROWS)) lines.push(`- ${line}`);
-    for (const item of assessment.notChecked.slice(0, MAX_ROWS))
-      lines.push(`- ${code(item.version ? `${item.name}@${item.version}` : item.name)} in ${code(item.lockfile)} (${item.unreachable ? "unreachable" : item.runtime ? "runtime" : "dev"}): ${cell(item.reason)}`);
-    const hidden = Math.max(0, notAssessedFiles.length - MAX_ROWS) + Math.max(0, assessment.notChecked.length - MAX_ROWS);
-    if (hidden) lines.push(`- … ${hidden} more`);
+  if (notAssessed.length) {
+    lines.push(`<details><summary>Not assessed (${notAssessed.length}): outside what this check covers</summary>`, "");
+    for (const line of notAssessed.slice(0, MAX_ROWS)) lines.push(`- ${line}`);
+    if (notAssessed.length > MAX_ROWS) lines.push(`- … ${notAssessed.length - MAX_ROWS} more`);
+    lines.push("", "</details>", "");
+  }
+  if (notChecked.length) {
+    lines.push(`<details><summary>Not checked (${notChecked.length}): a lookup failed; a rerun may complete it</summary>`, "");
+    for (const line of notChecked.slice(0, MAX_ROWS)) lines.push(`- ${line}`);
+    if (notChecked.length > MAX_ROWS) lines.push(`- … ${notChecked.length - MAX_ROWS} more`);
     lines.push("", "</details>", "");
   }
 
@@ -248,7 +270,7 @@ export const renderReport = (assessment: Assessment, context: ReportContext): st
     "<details><summary>Verdict rules</summary>",
     "",
     "- **blocked**: any locked version known to be malicious (an OSV `MAL-` record), even one no workspace member reaches, or a high or critical advisory in a direct runtime dependency.",
-    "- **review**: other advisories in runtime dependencies, a runtime dependency that could not be checked, or an outdated key package (a newer major release, or a newer minor release on 0.x). Advisories in development-only dependencies and in lock entries no workspace member reaches are listed but don't change the verdict.",
+    "- **review**: other advisories in runtime dependencies, a runtime dependency that could not be checked against advisories or that comes from Git, a local path or a URL, or a key package that is outdated (a newer major release, or a newer minor release on 0.x) or whose latest release could not be looked up. Advisories in development-only dependencies and in lock entries no workspace member reaches are listed but don't change the verdict.",
     "- **ready (npm dependencies assessed)**: none of the above. It does not mean the application is safe to deploy.",
     "- Coverage is **complete** when every supported npm lockfile was assessed, **partial** when something was not checked or not assessed, and **failed** when nothing could be assessed.",
     `- Key packages: ${context.keyPackages.map(code).join(", ")}. Advisory data: [OSV](https://osv.dev); advisories without a severity count as moderate.`,
