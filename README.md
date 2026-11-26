@@ -81,7 +81,7 @@ branch `preflight-demo`, path `sdk`). Drift's own workflows are removed on that 
 Repository: [lemind/preflight-demo-clean](https://github.com/lemind/preflight-demo-clean). It depends only on
 `@solana/kit` 8.6.0, the latest release on 25 Nov 2026. Its lockfile holds 47 locked versions.
 
-- [Run](https://github.com/lemind/preflight-demo-clean/actions/runs/45594603907):
+- [Run](https://github.com/lemind/preflight-demo-clean/actions/runs/45811076777):
   `Verdict: ready, coverage: complete, spent: 0.00 test USDC`.
 - "Ready" can change: a new advisory or a new major release of a key package turns it to blocked or review.
 
@@ -112,7 +112,7 @@ jobs:
         with:
           persist-credentials: false
       # Reads lockfiles and manifests only; nothing is installed, built or run.
-      - uses: lemind/dependency-preflight@98e6c7acf637efbad749eeef65e975e7231ab1f2
+      - uses: lemind/dependency-preflight@2b25fabb525192e98ee71285f43c785258b09e8f
 ```
 
 The report is in the run's summary. The step fails on **blocked**; set `fail-on: review` to fail on review too. A
@@ -140,7 +140,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: lemind/dependency-preflight@98e6c7acf637efbad749eeef65e975e7231ab1f2
+      - uses: lemind/dependency-preflight@2b25fabb525192e98ee71285f43c785258b09e8f
         env:
           TELEGRAPH_EVM_PRIVATE_KEY: ${{ secrets.TELEGRAPH_EVM_PRIVATE_KEY }}
 ```
@@ -149,8 +149,10 @@ Without the secret, or without write access, the Action runs the free check and 
 explanations. It never buys on `pull_request_target` or for a pull request from a fork, even when the secret is
 available.
 
-The paid demo (scenario 2) ran on an earlier commit, `0670854`. The paid path has not yet been run on the commit
-pinned here.
+The paid path ran on the commit pinned here on 26 Nov
+([run](https://github.com/lemind/protocol-v2/actions/runs/45809367818)): one new answer bought for 0.02 test USDC,
+three reused. The miner answered "not found" for that upgrade, `@ellipsis-labs/phoenix-sdk` 1.4.5 → 2.0.3: it had no
+release notes for it.
 
 ### Inputs and outputs
 
@@ -204,16 +206,15 @@ Outputs: `verdict`, `coverage`, `spent-usdc`. The full contract:
 
 ## Status
 
-What works today (25 Nov 2026), each step run on GitHub-hosted runners:
+What works today (26 Nov 2026), each step run on GitHub-hosted runners with the pinned commit:
 
 - **P1** (free check: lockfiles, OSV advisories, verdict and coverage, job summary, fail on blocked);
 - **P2** (paid explanations, purchase record, receipts, reuse);
 - **P3** (pull request re-check and comment).
 
-Not done yet: an outside reproduction from this README, and a paid run on the pinned commit. Built and tested
-offline, but not yet in the pinned Action: separate "not assessed" and "not checked" sections in the report (T034),
-no purchases on `pull_request_target` or for fork pull requests, the testnet chain check, and review when a key
-package's latest release can't be looked up.
+The free check from this README was reproduced on 26 Nov by an AI agent on a separate GitHub account
+([pull request](https://github.com/lemind-bt/preflight-repro/pull/1)): ready on `main`, blocked after adding
+`nanoid` 3.3.4.
 
 Context, plan and tasks: [PROJECT.md](PROJECT.md), [plan](specs/001-dependency-preflight/plan.md),
 [tasks](specs/001-dependency-preflight/tasks.md). Spec:
