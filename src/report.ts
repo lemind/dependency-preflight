@@ -270,7 +270,7 @@ export const renderReport = (assessment: Assessment, context: ReportContext): st
     "<details><summary>Verdict rules</summary>",
     "",
     "- **blocked**: any locked version known to be malicious (an OSV `MAL-` record), even one no workspace member reaches, or a high or critical advisory in a direct runtime dependency.",
-    "- **review**: other advisories in runtime dependencies, a runtime dependency that could not be checked against advisories or that comes from Git, a local path or a URL, or an outdated key package (a newer major release, or a newer minor release on 0.x). Advisories in development-only dependencies and in lock entries no workspace member reaches are listed but don't change the verdict.",
+    "- **review**: other advisories in runtime dependencies, a runtime dependency that could not be checked against advisories or that comes from Git, a local path or a URL, or a key package that is outdated (a newer major release, or a newer minor release on 0.x) or whose latest release could not be looked up. Advisories in development-only dependencies and in lock entries no workspace member reaches are listed but don't change the verdict.",
     "- **ready (npm dependencies assessed)**: none of the above. It does not mean the application is safe to deploy.",
     "- Coverage is **complete** when every supported npm lockfile was assessed, **partial** when something was not checked or not assessed, and **failed** when nothing could be assessed.",
     `- Key packages: ${context.keyPackages.map(code).join(", ")}. Advisory data: [OSV](https://osv.dev); advisories without a severity count as moderate.`,

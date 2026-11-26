@@ -279,6 +279,15 @@ describe("verdict rules", () => {
     const web3 = { "@solana/web3.js": { latest: "1.98.4", versions: ["1.95.8", "1.98.4"] } };
     expect(await verdictOf(project({ "@solana/web3.js": "1.95.8" }), web3)).toBe("ready");
   });
+  it("latest release unknown: review for a key package, coverage partial only for others", async () => {
+    const key = await assess(project({ "@coral-xyz/anchor": "0.29.0" }), DEFAULT_KEY_PACKAGES, replayFetcher(recording, {}));
+    expect(key.verdict).toBe("review");
+    expect(key.verdictReasons.review).toContain("latest release unknown for key package: @coral-xyz/anchor");
+    expect(key.coverageReasons).toContain("latest version unknown for 1 direct dependency");
+    const other = await assess(project({ "plain-dep": "1.0.0" }), DEFAULT_KEY_PACKAGES, replayFetcher(recording, {}));
+    expect(other.verdict).toBe("ready");
+    expect(other.coverage).toBe("partial");
+  });
   it("lock entries no member reaches: advisories listed but not in the verdict; a malicious one still blocks", async () => {
     const unreachable = (name: string, version: string) =>
       writeTree({

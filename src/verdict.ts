@@ -209,6 +209,11 @@ export const decide = (
   const unassessedRuntime = notAssessed.filter((item) => item.runtime);
   if (unassessedRuntime.length)
     reviewReasons.push(`${plural(unassessedRuntime.length, "runtime dependency", "runtime dependencies")} not assessed (Git, local path or unverifiable source)`);
+  // A key package whose latest release couldn't be looked up can't be called current.
+  const latestUnknown = [...new Set(registryFailures.map((failure) => failure.slice(0, failure.indexOf(": "))))];
+  const keyLatestUnknown = latestUnknown.filter((name) => isKeyPackage(name, keyPackages));
+  if (keyLatestUnknown.length)
+    reviewReasons.push(`latest release unknown for key ${keyLatestUnknown.length === 1 ? "package" : "packages"}: ${keyLatestUnknown.join(", ")}`);
   const outdatedKey = outdated.filter((finding) => finding.key && finding.gap === "major");
   if (outdatedKey.length)
     reviewReasons.push(
@@ -233,7 +238,7 @@ export const decide = (
   if (notAssessed.length) coverageReasons.push(`${plural(notAssessed.length, "dependency", "dependencies")} not assessed (Git, local path or unverifiable source)`);
   if (advisoryCheck.detailsMissing.length)
     coverageReasons.push(`${plural(advisoryCheck.detailsMissing.length, "advisory record")} could not be retrieved in full`);
-  if (registryFailures.length) coverageReasons.push(`latest version unknown for ${plural(registryFailures.length, "direct dependency", "direct dependencies")}`);
+  if (latestUnknown.length) coverageReasons.push(`latest version unknown for ${plural(latestUnknown.length, "direct dependency", "direct dependencies")}`);
   const coverage: Coverage = coverageFailed ? "failed" : coverageReasons.length ? "partial" : "complete";
 
   return {
@@ -245,7 +250,7 @@ export const decide = (
     outdated,
     notChecked,
     notAssessed,
-    latestUnknown: [...new Set(registryFailures.map((failure) => failure.slice(0, failure.indexOf(": "))))],
+    latestUnknown,
     discovery,
     lockedVersionCount: new Set(packages.map(packageKey)).size,
   };

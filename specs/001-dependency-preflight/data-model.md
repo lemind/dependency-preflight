@@ -101,7 +101,8 @@ candidates (P2): `runtime` and `minor`/`major`.
 
 Each has its own total and report section, one line per item; a package whose advisory and latest-release lookups
 both failed is one line. A runtime `NotChecked` or `NotAssessed` entry makes the verdict at least review (FR-017).
-Unsupported files from `Discovery` and `latestUnknown` only make coverage partial. On a pull request, a base
+A key package in `latestUnknown` also makes it review: it can't be called current. Unsupported files from
+`Discovery` and other `latestUnknown` entries only make coverage partial. On a pull request, a base
 finding whose package is `NotAssessed` on the head is not verified, never resolved (FR-013).
 
 ## Report → `Assessment` [built]
