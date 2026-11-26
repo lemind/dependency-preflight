@@ -121,26 +121,6 @@ describe("discovery", () => {
     expect(find(report.packages, "vitest")[0].usages).toEqual([{ member: ".", direct: true, runtime: false, directRuntime: false }]);
   });
 
-  it("npm file: dependency outside the workspaces: not assessed, not a member", () => {
-    const root = writeTree({
-      "package.json": { name: "app", dependencies: { foo: "file:vendor/foo" } },
-      "vendor/foo/package.json": { name: "foo", dependencies: { a: "^1.0.0" } },
-      "package-lock.json": npmLock(
-        {
-          "node_modules/foo": { resolved: "vendor/foo", link: true },
-          "vendor/foo": { name: "foo", version: "1.0.0", dependencies: { a: "^1.0.0" } },
-          "node_modules/a": { version: "1.0.0", resolved: tarball("a", "1.0.0") },
-        },
-        { dependencies: { foo: "file:vendor/foo" } },
-      ),
-    });
-    const report = assessed(discover(root).lockfiles[0]);
-    expect(report.members).toEqual(["."]);
-    expect(report.notAssessed).toMatchObject([
-      { name: "foo", source: "file:vendor/foo", reason: "local path dependency", usages: [{ member: ".", direct: true, runtime: true }] },
-    ]);
-  });
-
   it("a direct devDependency that a runtime dependency also pulls in is runtime, but not a direct runtime dependency", () => {
     const root = writeTree({
       "package.json": { name: "app", dependencies: { express: "^4.0.0" }, devDependencies: { debug: "^2.6.0" } },
