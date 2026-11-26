@@ -1,8 +1,8 @@
 # Contract: the `dependency-preflight` Action
 
 The Action's public interface: `action.yml` inputs and outputs, environment, exit behaviour and the report.
-**built** items exist on main; **P2 built** ran with a wallet on 25 Nov on commit `0670854` (T025), not yet on the
-pinned commit; **P3 built** (the pull request re-check) ran on a real pull request on 25 Nov (T032).
+**built** items exist on main; **P2 built** ran with a wallet on 25 Nov on commit `0670854` (T025) and on 26 Nov on
+`2b25fab`; **P3 built** (the pull request re-check) ran on a real pull request on 25 Nov (T032).
 
 ## Inputs
 
