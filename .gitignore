@@ -4,3 +4,8 @@
 node_modules/
 dist/
 .DS_Store
+
+# GitHub's Node action runs the packaged bundle directly.
+!dist/
+dist/*
+!dist/index.cjs

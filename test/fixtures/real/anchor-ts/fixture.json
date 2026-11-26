@@ -1,0 +1,97 @@
+{
+  "repository": "solana-foundation/anchor",
+  "commit": "53cd88fa179bad874904a37b65150a9a3840bc13",
+  "retrieved": "2026-11-24T18:38:02Z",
+  "selection": "^ts/(yarn\\.lock|package\\.json|packages/[^/]+/package\\.json|tests/package\\.json)$",
+  "files": [
+    {
+      "path": "ts/package.json",
+      "sha256": "c2604701845ba0f470c18f4ae89f8b2ae3e34df4cb453e3b6c96f8382e7bc9cb"
+    },
+    {
+      "path": "ts/packages/anchor-errors/package.json",
+      "sha256": "f4c8d194b047809b59b2b7db4db94cd6caeddf35415025a7906d246f66c3cdd2"
+    },
+    {
+      "path": "ts/packages/anchor/package.json",
+      "sha256": "9e775824476697eb0673b63e28c5326a0c61d260b645a8cd23372a8da8eccdfb"
+    },
+    {
+      "path": "ts/packages/borsh/package.json",
+      "sha256": "5dac8dc941626fec9a72bd1de36a1f36e96b5ae4285ff517722054f144f1b865"
+    },
+    {
+      "path": "ts/packages/spl-associated-token-account/package.json",
+      "sha256": "70d222d6499733a1156e74e5ae0eda999e2ae1ae6fe6b07d80b9fb7217fa3190"
+    },
+    {
+      "path": "ts/packages/spl-binary-option/package.json",
+      "sha256": "2f285df2b179b174f12b0af610051213e5298ed0679b0e8f1e94c5cfc9c78db4"
+    },
+    {
+      "path": "ts/packages/spl-binary-oracle-pair/package.json",
+      "sha256": "25eea7f92000f8c65adc21e0b9774da62fe6c20b255722638a24b5e207c4623f"
+    },
+    {
+      "path": "ts/packages/spl-feature-proposal/package.json",
+      "sha256": "876e3ee69963af1a84b74a8d9aafd6aab56cd697cbaaa05a5345a8d1b8047282"
+    },
+    {
+      "path": "ts/packages/spl-governance/package.json",
+      "sha256": "eb7a3b00282f5eabc98f882fbd7b62d378fffd8b4b7ad60a72898c31cf01ce28"
+    },
+    {
+      "path": "ts/packages/spl-memo/package.json",
+      "sha256": "4bcb6ddb11d328614e50e9be1c76c3438357532753cc15943fa48299cc4c73b9"
+    },
+    {
+      "path": "ts/packages/spl-name-service/package.json",
+      "sha256": "d91eb701dff67d06c31d3efec80034468391a5782bb9bf100105b7640ede10ed"
+    },
+    {
+      "path": "ts/packages/spl-record/package.json",
+      "sha256": "f32f751de6a769453f9b7a61f416ad3ef5b834c8d33dbabdc82b0805b4b1e02b"
+    },
+    {
+      "path": "ts/packages/spl-stake-pool/package.json",
+      "sha256": "b43dfbc3e0b7b278c53956b5639ef4f7548359ecc5fd4778c7b1300bc61acf20"
+    },
+    {
+      "path": "ts/packages/spl-stateless-asks/package.json",
+      "sha256": "c498d5cd96ea6ef83cd05417acdfadefe4e49efcc66f5598d65beb402b7b9a4d"
+    },
+    {
+      "path": "ts/packages/spl-token-lending/package.json",
+      "sha256": "37e210aeb1c0955f9b74fbb3a7e8a0eb7a860a67c981a5eb09c1569f3d9aef77"
+    },
+    {
+      "path": "ts/packages/spl-token-swap/package.json",
+      "sha256": "9acaf16f23624289b210f2aa149f1fb2eab42f4a29df02fcfdf597de86d51eb9"
+    },
+    {
+      "path": "ts/packages/spl-token/package.json",
+      "sha256": "530010611aebf50c78b3fb806353aabefdff5c0af8e4a6e1ccaf88987c699509"
+    },
+    {
+      "path": "ts/tests/package.json",
+      "sha256": "8970ceab23772fc2fe2055039da32b082fe6b95449917c65a5107136ca352ca0"
+    },
+    {
+      "path": "ts/yarn.lock",
+      "sha256": "567f7da500bd4db351ccdc2a038439f290ef363c1f0696bfa96ebf22e72ba00d"
+    }
+  ],
+  "dependencyFilesAtCommit": [
+    "Cargo.lock",
+    "cli/npm-package/package-lock.json",
+    "cli/templates/litesvm/Cargo.lock",
+    "cli/tests/fixtures/debugger_program/Cargo.lock",
+    "docs-v2/bun.lock",
+    "docs/pnpm-lock.yaml",
+    "docs/pnpm-workspace.yaml",
+    "examples/tutorial/yarn.lock",
+    "examples/yarn.lock",
+    "tests/yarn.lock",
+    "ts/yarn.lock"
+  ]
+}

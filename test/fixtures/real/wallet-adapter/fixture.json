@@ -1,0 +1,196 @@
+{
+  "repository": "anza-xyz/wallet-adapter",
+  "commit": "3663416165b9a1af734c451e588b40cacd7091c1",
+  "retrieved": "2026-11-24T18:37:45Z",
+  "selection": "^(pnpm-lock\\.yaml|pnpm-workspace\\.yaml|(packages/[^/]+/[^/]+/)?package\\.json)$",
+  "files": [
+    {
+      "path": "package.json",
+      "sha256": "d9bdb8081d480ceb67e568c10bd67276315aa3c43d28d7fe1870caf006e7e63a"
+    },
+    {
+      "path": "packages/core/base/package.json",
+      "sha256": "65c85fa1963ac170e9fb25ae9516063f898b8cf274e04323413a730d1ff7b1e1"
+    },
+    {
+      "path": "packages/core/react/package.json",
+      "sha256": "fa8ec30c3eb4ea89bb9e6517bd654713cc2be24cf492860ad4106b846044edf1"
+    },
+    {
+      "path": "packages/starter/example/package.json",
+      "sha256": "710410b691f4b853913ca4fa792000677cd3dd7b1359f37031af4926a637d78b"
+    },
+    {
+      "path": "packages/starter/react-ui-starter/package.json",
+      "sha256": "a015ef3686ab1ffaba9bf4143a04f4a44e6ed5356106db17175c274ab7186f63"
+    },
+    {
+      "path": "packages/ui/base-ui/package.json",
+      "sha256": "263a95fff2fabb817e829845357c1b43d9f85194d55091ee2195c870fb3a4b97"
+    },
+    {
+      "path": "packages/ui/react-ui/package.json",
+      "sha256": "b62c42a77141c88d832eaafc03dc821992e424ba0dfab6f5abed5f3e91afead8"
+    },
+    {
+      "path": "packages/wallets/alpha/package.json",
+      "sha256": "1cfc3e8e4c5297c73bf315fd16463edf921f13b6d7b5d8c23ec6f60064467355"
+    },
+    {
+      "path": "packages/wallets/avana/package.json",
+      "sha256": "b153e89bedf6473404cec9cf0bbf74472f9c316d4f9d53446f3bf81bb10d4666"
+    },
+    {
+      "path": "packages/wallets/bitkeep/package.json",
+      "sha256": "1cc37f63cfb2317bb370d8d4fde4980b3fa70869cc90f76800ca71d00fcaab0c"
+    },
+    {
+      "path": "packages/wallets/bitpie/package.json",
+      "sha256": "c0ba6aa14bddd14a618805a5f219b16616591cbc8bc543e36cc314a1f5b7cb2b"
+    },
+    {
+      "path": "packages/wallets/clover/package.json",
+      "sha256": "e907c1f0b163696782832d1a0fe96943d74b9519890d31af8d6759bfa1596e12"
+    },
+    {
+      "path": "packages/wallets/coin98/package.json",
+      "sha256": "d285eca6e2eb28634ee4c7ea461e43fc0a95391c03179a0d8c961d0b66d53f2a"
+    },
+    {
+      "path": "packages/wallets/coinbase/package.json",
+      "sha256": "c68894708ef2e623040bc508dbe86e8ab5d01731c0ee96dde770560fe95f7e63"
+    },
+    {
+      "path": "packages/wallets/coinhub/package.json",
+      "sha256": "6a14dd16e60921ab3c159461880bba3138b383dc4704c10587f047979b908e44"
+    },
+    {
+      "path": "packages/wallets/fractal/package.json",
+      "sha256": "ebe32e49dd20b9045d1bdab9234fd44fc60839c97739cbc44db9c17a29e0ba97"
+    },
+    {
+      "path": "packages/wallets/huobi/package.json",
+      "sha256": "324e0f54a74ddcfa75e61f8f9384c5bbe17447e96540abdc91117e38dd149728"
+    },
+    {
+      "path": "packages/wallets/hyperpay/package.json",
+      "sha256": "8dc56cc4e52efd2081d40e6820923eea0b742a811305c3d870d100ccf439108b"
+    },
+    {
+      "path": "packages/wallets/keystone/package.json",
+      "sha256": "bd22b72f7c5d8365ab48dc60f95a8f85948bcbcd6bdf4d492b148b5d7c6f4eb0"
+    },
+    {
+      "path": "packages/wallets/krystal/package.json",
+      "sha256": "8772d3f57dece49c928803c90c6df22d927e52bff98ce6735ac72dc3a192a3af"
+    },
+    {
+      "path": "packages/wallets/ledger/package.json",
+      "sha256": "cded97360acbf7b704352dfe782f5010532035025cb9a8ac7c1692b5958395c7"
+    },
+    {
+      "path": "packages/wallets/mathwallet/package.json",
+      "sha256": "ba4f81d4b268708c83540f4855474f636a7e57b2db7b745b4ceff7ace4839d7e"
+    },
+    {
+      "path": "packages/wallets/neko/package.json",
+      "sha256": "7b50644837154ed6598f1c14b84edca19a1150673199e2fc3916eda33a6f9b95"
+    },
+    {
+      "path": "packages/wallets/nightly/package.json",
+      "sha256": "284cff3e59bf589e57b1a1ba8a8a3b08f6d3516e602befa6b03791e8f6e8d4ee"
+    },
+    {
+      "path": "packages/wallets/nufi/package.json",
+      "sha256": "169bb037dce58af02e9a05c29de879747f6c11653e7919d588485bd28f3cc4b0"
+    },
+    {
+      "path": "packages/wallets/onto/package.json",
+      "sha256": "cce0aabf8d9744bdb56e0af9c7da1f79ade39e83878e049033782bdeda6123d4"
+    },
+    {
+      "path": "packages/wallets/particle/package.json",
+      "sha256": "e9a09f92b45d2d5e6f1f6a5a9215c44a6d38535cad47de3c66976d65730e3fa7"
+    },
+    {
+      "path": "packages/wallets/phantom/package.json",
+      "sha256": "09f3842fbbc3f7bca6272b747936223538f80721276d394eaafb95e7a3b2a1df"
+    },
+    {
+      "path": "packages/wallets/safepal/package.json",
+      "sha256": "743bfe41e8d298aa8d942ac79b721fb0acb26b46ed53c8bb14f2d5533ab183bc"
+    },
+    {
+      "path": "packages/wallets/saifu/package.json",
+      "sha256": "98781f657d5739c116044e952bcebbe4472ab12affa7030453c2c68aafaa9825"
+    },
+    {
+      "path": "packages/wallets/salmon/package.json",
+      "sha256": "63cd834529b6d0f9afaa78e1700448a1c7f2d02892a7a4831e810bdfb7ca3880"
+    },
+    {
+      "path": "packages/wallets/sky/package.json",
+      "sha256": "7b48919ae98e7d21c4e36bebb738f71a909eb64208ad1e585eedcc1e8542930a"
+    },
+    {
+      "path": "packages/wallets/solflare/package.json",
+      "sha256": "099ddc61b491909d0295a23c0d78eeb48be0ffb589103d292c26a34919d3b1e1"
+    },
+    {
+      "path": "packages/wallets/solong/package.json",
+      "sha256": "f4146c4773b810ccdff56700220b32e82a5407d18961397ad3d1420359435262"
+    },
+    {
+      "path": "packages/wallets/spot/package.json",
+      "sha256": "41425ca09cde1073f817322f992c9f0779a1ef573fa15ede995de02a47e70c79"
+    },
+    {
+      "path": "packages/wallets/tokenary/package.json",
+      "sha256": "880494b7e0a85ef92410e1c5453193d9b3babc7605ebea55c2a301e40d86ed94"
+    },
+    {
+      "path": "packages/wallets/tokenpocket/package.json",
+      "sha256": "32e2ad409995c10b7f32c2fc11c00d673ba67bcda1925156dd807e3a65b15d8e"
+    },
+    {
+      "path": "packages/wallets/torus/package.json",
+      "sha256": "f350075326feb94356b292ca11a9f88a4e3d1772a43a5c9a7f54b8dda39465f9"
+    },
+    {
+      "path": "packages/wallets/trezor/package.json",
+      "sha256": "c2ea8d128f1842c50a934980cf1b2b23db9e8df8fb57d5aaba0471bc62b92b50"
+    },
+    {
+      "path": "packages/wallets/trust/package.json",
+      "sha256": "41fc6bad8a4907aeb37273f4db79aed470dac547ef827776e7d635da82971703"
+    },
+    {
+      "path": "packages/wallets/unsafe-burner/package.json",
+      "sha256": "ee58292ccaf0a4256d6a30476202dda8dbccb493ca277c7c7e6d085db85ad927"
+    },
+    {
+      "path": "packages/wallets/walletconnect/package.json",
+      "sha256": "26a61920ddfa40b5227ad3046073dee6a02ab9cbf021ba1a5823e556640e521b"
+    },
+    {
+      "path": "packages/wallets/wallets/package.json",
+      "sha256": "06ca7e24dd13b45e878789b89ff89588404fe3a00984165c9b1591d5b1331973"
+    },
+    {
+      "path": "packages/wallets/xdefi/package.json",
+      "sha256": "0f371f718b90bf7252dd3670bcda2cf1671bb006c9c7b93cf67cc85481cf4a08"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "sha256": "453a1e4f594193d80ff2d57a2a2c4470244e3465b36524160d2280602e4d3e2f"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "sha256": "7df18cfbe9c27f6e4656f96409ce4d1c2f85bf9c90e812b748e4d2a9873a3247"
+    }
+  ],
+  "dependencyFilesAtCommit": [
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml"
+  ]
+}

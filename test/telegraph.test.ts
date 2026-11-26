@@ -1,0 +1,648 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  AskFailedError,
+  type AttemptEvent,
+  BudgetCapError,
+  IntelligenceClient,
+  PaymentUnknownError,
+  PriceGuardError,
+  paymentConfig,
+  rankMiners,
+} from "../src/telegraph.js";
+
+const CHAIN_ID = 11155111;
+const CHAIN = `eip155:${CHAIN_ID}`;
+const USDC = "0xcc194e1a843B658526D0D5C431f670028582Ae17";
+
+// Real devnode wire format: the 402 challenge rides the `payment-required`
+// header as base64 JSON, amount in atomic units, and accepts[] carries an EVM
+// `exact` entry plus other options (Solana here; `escrow` in other tests).
+function challengeBody(evmAmountAtomic: string, solAmountAtomic = "999999") {
+  return {
+    x402Version: 2,
+    accepts: [
+      { scheme: "exact", network: CHAIN, amount: evmAmountAtomic, asset: USDC, payTo: "0xPayTo", extra: { name: "USD Coin", version: "2" } },
+      { scheme: "exact", network: "solana:EtWTRAB", amount: solAmountAtomic, asset: "4zMM", payTo: "G53E" },
+    ],
+  };
+}
+
+const b64 = (o: unknown) => btoa(JSON.stringify(o));
+const settle = (success: boolean, tx = "0xdeadbeef") => b64({ success, transaction: tx, network: CHAIN });
+const quote402 = (atomic: string) =>
+  new Response("null", { status: 402, headers: { "payment-required": b64(challengeBody(atomic)) } });
+
+// Shape of GET /api/miners?intent=… on the devnode: scores[] holds one entry
+// per intent the miner is ranked on.
+const API_MINERS = [
+  {
+    id: "148001",
+    name: "OpenAlex QA",
+    endpoints: [{ path: "/query", method: "GET", description: "Query for intent QUESTION_ANSWERING" }],
+    scores: [{ intent_id: "QUESTION_ANSWERING", rank: 4, score: 0.47 }],
+  },
+  {
+    id: "302",
+    name: "ChainSight",
+    endpoints: [
+      { path: "/price", method: "GET", description: "CRYPTO_PRICE" },
+      { path: "/qa", method: "GET", description: "Direct factual question answering (QUESTION_ANSWERING)." },
+    ],
+    scores: [{ intent_id: "CRYPTO_PRICE", rank: 1, score: 0.9 }], // not ranked for QA
+  },
+  {
+    id: "148002",
+    name: "Crossref QA",
+    endpoints: [{ path: "/query", method: "GET", description: "Query for intent QUESTION_ANSWERING" }],
+    scores: [{ intent_id: "QUESTION_ANSWERING", rank: 3, score: 0.59 }],
+  },
+];
+
+const LONG_ANSWER = "zod 4.6.7 changes .refine: ".padEnd(800, "x");
+function engine200(overrides: Record<string, unknown> = {}, headers: Record<string, string> = {}) {
+  return new Response(
+    JSON.stringify({
+      miner_id: "148002",
+      miner_name: "Crossref QA",
+      result: { answer: LONG_ANSWER },
+      result_shape: "raw",
+      signal_hash: "0xsignal",
+      ...overrides,
+    }),
+    {
+      status: 200,
+      headers: {
+        "payment-response": settle(true),
+        "x-telegraph-receipt": b64({ receipt_hash: "0xreceipt", tx_hash: "0xdeadbeef" }),
+        ...headers,
+      },
+    }
+  );
+}
+
+function makeClient(overrides: Partial<ConstructorParameters<typeof IntelligenceClient>[0]> = {}) {
+  const fetchImpl = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
+    String(input).includes("/api/miners") ? new Response(JSON.stringify(API_MINERS)) : quote402("10000")
+  );
+  const paymentFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => engine200());
+  const client = new IntelligenceClient({
+    nodeUrl: "https://devnode.test/",
+    evmPrivateKey: `0x${"a".repeat(64)}`,
+    chainId: CHAIN_ID,
+    usdcAddress: USDC,
+    maxPricePerCallUsdc: 0.05,
+    budgetCapUsdc: 0.5,
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+    paymentFetch,
+    ...overrides,
+  });
+  return { client, fetchImpl, paymentFetch };
+}
+
+describe("rankMiners", () => {
+  it("orders by the intent's leaderboard rank and drops miners not ranked for it", () => {
+    const ranked = rankMiners("QUESTION_ANSWERING", API_MINERS);
+    expect(ranked.map((m) => [m.id, m.rank, m.path])).toEqual([
+      ["148002", 3, "/query"],
+      ["148001", 4, "/query"],
+    ]);
+  });
+});
+
+describe("rankMiners scores", () => {
+  it("records no score for a ranked miner the node gave none, rather than 0", () => {
+    const ranked = rankMiners("QUESTION_ANSWERING", [
+      { id: "1", name: "No score", endpoints: [{ path: "/q", method: "GET" }], scores: [{ intent_id: "QUESTION_ANSWERING", rank: 2 }] },
+    ]);
+    expect([ranked[0].rank, ranked[0].score]).toEqual([2, null]);
+  });
+});
+
+describe("IntelligenceClient.buy", () => {
+  it("pays the top-ranked miner and records receipt, signal, rank and the FULL answer", async () => {
+    const { client } = makeClient();
+    const p = await client.buy("QUESTION_ANSWERING", "what changed in zod 4.6.7?");
+    expect(p).toEqual({
+      intent: "QUESTION_ANSWERING",
+      minerId: "148002",
+      minerName: "Crossref QA",
+      minerRank: 3,
+      minerScore: 0.59,
+      selectedBy: "rank",
+      amountUsdc: 0.01,
+      txHash: "0xdeadbeef",
+      receiptHash: "0xreceipt",
+      signalHash: "0xsignal",
+      answer: LONG_ANSWER,
+      result: { answer: LONG_ANSWER },
+      status: "settled",
+      network: CHAIN,
+      chainId: CHAIN_ID,
+      usdcContract: USDC,
+      explorerBaseUrl: "https://sepolia.etherscan.io",
+    });
+    expect(client.spentUsdc).toBeCloseTo(0.01);
+  });
+
+  it("sends the miner's native request through the direct Engine endpoint", async () => {
+    const { client, fetchImpl, paymentFetch } = makeClient();
+    await client.buy("QUESTION_ANSWERING", "hello");
+    expect(String(fetchImpl.mock.calls[0][0])).toBe(
+      "https://devnode.test/api/miners?intent=QUESTION_ANSWERING&status=active&limit=100"
+    );
+    const [url, init] = paymentFetch.mock.calls[0];
+    expect(url).toBe("https://devnode.test/engine/v1/ask/148002");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({ method: "GET", endpoint: "/query", payload: { query: "hello" } });
+  });
+
+  it("steps down to the next rank when the top miner's call fails (failed calls are free)", async () => {
+    const paymentFetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{"error":"upstream error 404"}', { status: 500 }))
+      .mockResolvedValueOnce(engine200({ miner_id: "148001", miner_name: "OpenAlex QA" }));
+    const { client } = makeClient({ paymentFetch });
+    const p = await client.buy("QUESTION_ANSWERING", "x");
+    expect([p.minerId, p.minerRank]).toEqual(["148001", 4]);
+    expect(client.spentUsdc).toBeCloseTo(0.01);
+  });
+
+  it("tries our preferred miner first, even unranked, and labels the purchase as our choice", async () => {
+    // Listed for the intent but not ranked yet, like a miner in its grace period.
+    const unranked = { id: "7314", name: "Package Release Intelligence", endpoints: [{ path: "/answer", method: "GET", description: "npm migrations" }] };
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("/api/miners") ? new Response(JSON.stringify([...API_MINERS, unranked])) : quote402("20000")
+    );
+    const paymentFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => engine200({ miner_id: "7314", miner_name: "Package Release Intelligence" }));
+    const { client } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch, paymentFetch, preferredMinerId: "7314" });
+    const p = await client.buy("QUESTION_ANSWERING", (minerId) => minerId === "7314"
+      ? "What changed in zod from 3.23.8 to 4.0.0?" : "generic prompt");
+    expect(JSON.parse(String(paymentFetch.mock.calls[0][1]?.body)).payload.query).toBe("What changed in zod from 3.23.8 to 4.0.0?");
+    // Unranked: no rank or score is recorded, rather than a 0 that reads as better than rank 1.
+    expect([p.minerId, p.minerRank, p.minerScore, p.selectedBy]).toEqual(["7314", null, null, "our_choice"]);
+    expect(String(paymentFetch.mock.calls[0][0])).toBe("https://devnode.test/engine/v1/ask/7314");
+  });
+
+  it("records a preferred miner's real rank and score when the node has ranked it", async () => {
+    const { client } = makeClient({ preferredMinerId: "148001" });
+    const p = await client.buy("QUESTION_ANSWERING", "x");
+    expect([p.minerRank, p.minerScore, p.selectedBy]).toEqual([4, 0.47, "our_choice"]);
+  });
+
+  // Changed from the PR Agent: a configured miner is the only one asked (FR-007), so its failure is final.
+  it("never falls back to the leaderboard when the configured miner fails", async () => {
+    const unranked = { id: "7314", name: "Package Release Intelligence", endpoints: [{ path: "/answer", method: "GET" }] };
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("/api/miners") ? new Response(JSON.stringify([...API_MINERS, unranked])) : quote402("10000")
+    );
+    const paymentFetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{"error":"down"}', { status: 503 }))
+      .mockResolvedValueOnce(engine200());
+    const { client } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch, paymentFetch, preferredMinerId: "7314" });
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toThrow(/7314: HTTP 503/);
+    expect(paymentFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("buys nothing when the configured miner is not listed for the intent", async () => {
+    const { client, paymentFetch } = makeClient({ preferredMinerId: "999" });
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toThrow(/miner 999 is not listed by the node with an endpoint/);
+    expect(paymentFetch).not.toHaveBeenCalled();
+  });
+
+  it("throws AskFailedError naming each miner's failure when none answers", async () => {
+    const paymentFetch = vi.fn(async () => new Response('{"error":"down"}', { status: 503 }));
+    const { client } = makeClient({ paymentFetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toThrow(/#3 148002: HTTP 503.*#4 148001: HTTP 503/);
+    expect(client.spentUsdc).toBe(0);
+  });
+
+  it("treats settlement success: false as not charged and tries the next miner", async () => {
+    const paymentFetch = vi.fn(async () => engine200({}, { "payment-response": settle(false) }));
+    const { client } = makeClient({ paymentFetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toBeInstanceOf(AskFailedError);
+    expect(paymentFetch).toHaveBeenCalledTimes(2);
+    expect(client.spentUsdc).toBe(0);
+  });
+
+  it("stops at the first miner when an answer has no settlement header (we can't tell if we paid)", async () => {
+    const paymentFetch = vi.fn(async () => engine200({}, { "payment-response": "" }));
+    const { client } = makeClient({ paymentFetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toBeInstanceOf(PaymentUnknownError);
+    expect(paymentFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a non-`answer` result whole rather than dropping it", async () => {
+    const paymentFetch = vi.fn(async () => engine200({ result: { exit_status: 0, stdout: "ok" } }));
+    const { client } = makeClient({ paymentFetch });
+    const purchase = await client.buy("QUESTION_ANSWERING", "x");
+    expect(purchase.answer).toBe('{"exit_status":0,"stdout":"ok"}');
+    expect(purchase.result).toEqual({ exit_status: 0, stdout: "ok" });
+  });
+
+  it("pays the EVM accept even when the Solana accept is listed first", async () => {
+    const body = challengeBody("10000");
+    body.accepts.reverse();
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("/api/miners")
+        ? new Response(JSON.stringify(API_MINERS))
+        : new Response("null", { status: 402, headers: { "payment-required": b64(body) } })
+    ) as unknown as typeof fetch;
+    const { client } = makeClient({ fetchImpl });
+    expect((await client.buy("QUESTION_ANSWERING", "x")).amountUsdc).toBeCloseTo(0.01);
+  });
+
+  it("quotes the `exact` accept when the `escrow` accept is listed first", async () => {
+    const body = challengeBody("10000");
+    body.accepts.unshift({ scheme: "escrow", network: CHAIN, amount: "99999999", asset: USDC, payTo: "0xDiamond" });
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("/api/miners")
+        ? new Response(JSON.stringify(API_MINERS))
+        : new Response("null", { status: 402, headers: { "payment-required": b64(body) } })
+    ) as unknown as typeof fetch;
+    const { client } = makeClient({ fetchImpl });
+    expect((await client.buy("QUESTION_ANSWERING", "x")).amountUsdc).toBeCloseTo(0.01);
+  });
+
+  it("refuses and never pays when the challenge only offers another chain's USDC", async () => {
+    const body = challengeBody("10000");
+    body.accepts[0] = { ...body.accepts[0], network: "eip155:84532", asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" };
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("/api/miners")
+        ? new Response(JSON.stringify(API_MINERS))
+        : new Response("null", { status: 402, headers: { "payment-required": b64(body) } })
+    ) as unknown as typeof fetch;
+    const { client, paymentFetch } = makeClient({ fetchImpl });
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toThrow(/neither exact payment in 0xcc194e1a843B658526D0D5C431f670028582Ae17 nor escrow on eip155:11155111/);
+    expect(paymentFetch).not.toHaveBeenCalled();
+  });
+
+  it("honours the x-payment-response spelling too (x402 spec variant)", async () => {
+    const paymentFetch = vi.fn(async () =>
+      engine200({}, { "payment-response": "", "x-payment-response": settle(true, "0xspec") })
+    );
+    const { client } = makeClient({ paymentFetch });
+    expect((await client.buy("QUESTION_ANSWERING", "x")).txHash).toBe("0xspec");
+  });
+
+  it("aborts with PriceGuardError when the live quote exceeds maxPricePerCallUsdc and never pays", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("/api/miners") ? new Response(JSON.stringify(API_MINERS)) : quote402("60000")
+    ) as unknown as typeof fetch;
+    const { client, paymentFetch } = makeClient({ fetchImpl });
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toBeInstanceOf(PriceGuardError);
+    expect(paymentFetch).not.toHaveBeenCalled();
+  });
+
+  it("aborts with BudgetCapError when cumulative spend would breach budgetCapUsdc", async () => {
+    const { client, paymentFetch } = makeClient();
+    client.spentUsdc = 0.495;
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toBeInstanceOf(BudgetCapError);
+    expect(paymentFetch).not.toHaveBeenCalled();
+  });
+
+  it("reserves maxPricePerCallUsdc, not the quote, since a repriced call can settle up to it", async () => {
+    const { client, paymentFetch } = makeClient(); // quote 0.01, max 0.05, cap 0.5
+    client.spentUsdc = 0.46; // 0.46 + 0.01 fits; 0.46 + 0.05 does not
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toBeInstanceOf(BudgetCapError);
+    expect(paymentFetch).not.toHaveBeenCalled();
+  });
+
+  it("records the settled amount from the receipt, not the quote (dynamic pricing)", async () => {
+    // The quote says 0.01 but the node repriced the paid call to 0.0125; the
+    // receipt's amount_uusdc is what was actually charged and must win.
+    const paymentFetch = vi.fn(async () =>
+      engine200({}, { "x-telegraph-receipt": b64({ receipt_hash: "0xreceipt", amount_uusdc: "12500" }) })
+    );
+    const { client } = makeClient({ paymentFetch });
+    const p = await client.buy("QUESTION_ANSWERING", "x");
+    expect(p.amountUsdc).toBe(0.0125);
+    expect(client.spentUsdc).toBe(0.0125);
+  });
+
+  it("routes the quote AND the paid request through an injected fetch (real wrap path)", async () => {
+    // No paymentFetch injected: the constructor's wrapFetchWithPaymentFromConfig
+    // must wrap the injected fetch, so both legs stay on it and global fetch —
+    // the only transport a harness cannot observe — is never touched.
+    const body = challengeBody("10000");
+    body.accepts[0] = { ...body.accepts[0], payTo: `0x${"11".repeat(20)}` };
+    let askCalls = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/api/miners")) return new Response(JSON.stringify(API_MINERS));
+      askCalls += 1;
+      return askCalls === 1
+        ? new Response("null", { status: 402, headers: { "payment-required": b64(body) } })
+        : engine200();
+    }) as unknown as typeof fetch;
+    const globalFetch = vi.fn();
+    vi.stubGlobal("fetch", globalFetch);
+    try {
+      const client = new IntelligenceClient({
+        nodeUrl: "https://devnode.test/",
+        evmPrivateKey: `0x${"a".repeat(64)}`,
+        chainId: CHAIN_ID,
+        usdcAddress: USDC,
+        maxPricePerCallUsdc: 0.05,
+        budgetCapUsdc: 0.5,
+        fetchImpl,
+        paymentFetch: undefined,
+      });
+      const p = await client.buy("QUESTION_ANSWERING", "x");
+      expect(p.status).toBe("settled");
+      expect(p.txHash).toBe("0xdeadbeef");
+      expect(globalFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("paymentConfig", () => {
+  it("allow-lists only our USDC on our chain, capped at maxPricePerCallUsdc in atomic units", () => {
+    const cfg = paymentConfig({
+      evmPrivateKey: `0x${"a".repeat(64)}`,
+      chainId: CHAIN_ID,
+      usdcAddress: USDC,
+      maxPricePerCallUsdc: 0.1,
+    });
+    expect(cfg.schemes.map((s) => s.network)).toEqual([CHAIN]);
+    expect(cfg.spendControls).toEqual({
+      allowedAssets: [{ network: CHAIN, asset: USDC, maxAmountPerPayment: "100000" }],
+    });
+  });
+});
+
+describe("IntelligenceClient.buy attempt stages", () => {
+  function recorder() {
+    const events: AttemptEvent[] = [];
+    return { events, onAttempt: async (e: AttemptEvent) => void events.push(e), states: () => events.map((e) => e.state) };
+  }
+
+  it("records reserved then request_sent (with the quote) before paying", async () => {
+    const rec = recorder();
+    const paymentFetch = vi.fn(async () => {
+      expect(rec.states()).toEqual(["reserved", "request_sent"]); // both recorded before money moves
+      return engine200();
+    });
+    const { client } = makeClient({ paymentFetch });
+    await client.buy("QUESTION_ANSWERING", "x", rec.onAttempt);
+    expect(rec.events[1]).toEqual({ state: "request_sent", minerId: "148002", quotedAmountUsdc: 0.01 });
+  });
+
+  it("never pays when request_sent can't be recorded", async () => {
+    const { client, paymentFetch } = makeClient();
+    const onAttempt = async (e: AttemptEvent) => {
+      if (e.state === "request_sent") throw new Error("ledger push failed");
+    };
+    await expect(client.buy("QUESTION_ANSWERING", "x", onAttempt)).rejects.toThrow("ledger push failed");
+    expect(paymentFetch).not.toHaveBeenCalled();
+  });
+
+  it("records failed_and_credited on an error reply, then tries the next miner as a new attempt", async () => {
+    const rec = recorder();
+    const paymentFetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("down", { status: 500 }))
+      .mockResolvedValueOnce(engine200({ miner_id: "148001" }));
+    const { client } = makeClient({ paymentFetch });
+    await client.buy("QUESTION_ANSWERING", "x", rec.onAttempt);
+    expect(rec.states()).toEqual(["reserved", "request_sent", "failed_and_credited", "reserved", "request_sent"]);
+    expect(rec.events[2].reason).toMatch(/HTTP 500/);
+  });
+
+  it("records unknown_needs_reconciliation and stops when the paid request gets no response", async () => {
+    const rec = recorder();
+    const paymentFetch = vi.fn(async () => {
+      throw new Error("socket hang up");
+    });
+    const { client } = makeClient({ paymentFetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x", rec.onAttempt)).rejects.toBeInstanceOf(PaymentUnknownError);
+    expect(rec.states()).toEqual(["reserved", "request_sent", "unknown_needs_reconciliation"]);
+    expect(paymentFetch).toHaveBeenCalledTimes(1); // no second miner
+    expect(client.spentUsdc).toBeCloseTo(0.05); // the worst case counts against the budget
+  });
+
+  // Added in this repository (review, 25 Nov): a paid answer that can't be read is never a delivered purchase.
+  it("stops for reconciliation, with the receipt and the spend counted, when a paid answer is not JSON", async () => {
+    const rec = recorder();
+    const paymentFetch = vi.fn(async () => {
+      const ok = engine200();
+      return new Response("<html>truncated", { status: 200, headers: ok.headers });
+    });
+    const { client } = makeClient({ paymentFetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x", rec.onAttempt)).rejects.toBeInstanceOf(PaymentUnknownError);
+    expect(rec.states()).toEqual(["reserved", "request_sent", "unknown_needs_reconciliation"]);
+    expect(rec.events[2].reason).toMatch(/receipt 0xreceipt.*not JSON/);
+    expect(client.spentUsdc).toBeCloseTo(0.01);
+    expect(paymentFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts the worst case when an answer has no readable settlement proof", async () => {
+    const paymentFetch = vi.fn(async () => engine200({}, { "payment-response": "" }));
+    const { client } = makeClient({ paymentFetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toBeInstanceOf(PaymentUnknownError);
+    expect(client.spentUsdc).toBeCloseTo(0.05);
+  });
+
+  // Added in this repository (review, 25 Nov): "reserved" blocks a key here, so a failure before paying must close it.
+  it("closes the attempt as failed_not_charged when the quote fails before any payment", async () => {
+    for (const quote of [
+      async () => new Response("bad gateway", { status: 502 }),
+      async () => { throw new Error("ECONNRESET"); },
+    ]) {
+      const rec = recorder();
+      const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+        String(input).includes("/api/miners") ? new Response(JSON.stringify(API_MINERS)) : quote());
+      const { client, paymentFetch } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch, preferredMinerId: "148002" });
+      await expect(client.buy("QUESTION_ANSWERING", "x", rec.onAttempt)).rejects.toBeInstanceOf(AskFailedError);
+      expect(rec.states()).toEqual(["reserved", "failed_not_charged"]);
+      expect(paymentFetch).not.toHaveBeenCalled();
+    }
+  });
+
+  it("records quote_refused with the quote and reason when the price limit refuses it", async () => {
+    const rec = recorder();
+    const { client, paymentFetch } = makeClient({ maxPricePerCallUsdc: 0.001 });
+    await expect(client.buy("QUESTION_ANSWERING", "x", rec.onAttempt)).rejects.toBeInstanceOf(PriceGuardError);
+    expect(rec.states()).toEqual(["reserved", "quote_refused"]);
+    expect(rec.events[1]).toMatchObject({ quotedAmountUsdc: 0.01, reason: expect.stringMatching(/exceeds maxPricePerCallUsdc/) });
+    expect(paymentFetch).not.toHaveBeenCalled();
+  });
+
+  it("records quote_refused when the budget limit refuses it", async () => {
+    const rec = recorder();
+    const { client } = makeClient();
+    client.spentUsdc = 0.49;
+    await expect(client.buy("QUESTION_ANSWERING", "x", rec.onAttempt)).rejects.toBeInstanceOf(BudgetCapError);
+    expect(rec.states()).toEqual(["reserved", "quote_refused"]);
+    expect(rec.events[1].reason).toMatch(/exceeds budgetCapUsdc/);
+  });
+
+  it("records failed_not_charged when the node rejects the signed payment (402 or 400 Invalid payment)", async () => {
+    for (const reply of [new Response("", { status: 402 }), new Response('{"error":"Invalid payment"}', { status: 400 })]) {
+      const rec = recorder();
+      const paymentFetch = vi.fn().mockResolvedValueOnce(reply).mockResolvedValueOnce(engine200());
+      const { client } = makeClient({ paymentFetch });
+      await client.buy("QUESTION_ANSWERING", "x", rec.onAttempt);
+      expect(rec.states().slice(0, 3)).toEqual(["reserved", "request_sent", "failed_not_charged"]);
+    }
+  });
+
+  it("records failed_not_charged on settlement success: false", async () => {
+    const rec = recorder();
+    const paymentFetch = vi
+      .fn()
+      .mockResolvedValueOnce(engine200({}, { "payment-response": settle(false) }))
+      .mockResolvedValueOnce(engine200());
+    const { client } = makeClient({ paymentFetch });
+    await client.buy("QUESTION_ANSWERING", "x", rec.onAttempt);
+    expect(rec.states().slice(0, 3)).toEqual(["reserved", "request_sent", "failed_not_charged"]);
+  });
+});
+
+
+describe("canonical QA purchases", () => {
+  it("discovers ranked miners for the exact canonical intent and uses the existing payment path", async () => {
+    const intent = "QUESTION_ANSWERING_GENERAL";
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("/api/miners")
+        ? new Response(JSON.stringify([{ id: "148002", endpoints: [{ method: "GET", path: "/query" }],
+          scores: [{ intent_id: intent, rank: 1, score: 0.9 }] }]))
+        : quote402("10000")
+    );
+    const { client, paymentFetch } = makeClient({ fetchImpl });
+    const purchase = await client.buy(intent, "upgrade zod");
+    expect(fetchImpl.mock.calls[0][0]).toBe(`https://devnode.test/api/miners?intent=${intent}&status=active&limit=100`);
+    expect(paymentFetch.mock.calls[0][0]).toBe("https://devnode.test/engine/v1/ask/148002");
+    expect(purchase.intent).toBe(intent);
+    expect(purchase.amountUsdc).toBe(0.01);
+  });
+});
+
+describe("IntelligenceClient.buy via Telegraph escrow", () => {
+  const DIAMOND = "0x72a70e949362670bf8bcead24efc5b8f950aa08b";
+  // Live shape of the escrow accept on 20 Nov 2026, when the node stopped offering `exact` on Sepolia.
+  const escrowChallenge = (amount = "20000") => ({
+    x402Version: 2,
+    accepts: [
+      { scheme: "exact", network: "eip155:84532", amount, asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", payTo: "0xPayTo" },
+      {
+        scheme: "escrow", network: CHAIN, amount, payTo: DIAMOND,
+        extra: {
+          message: `Telegraph Escrow Payment\n\nWallet: {from}\nPay To: ${DIAMOND}\nNetwork: ${CHAIN}\nAmount: ${amount} uUSDC\nResource: /v1/ask/148002\nNonce: {nonce}\nValid After: {validAfter}\nValid Before: {validBefore}`,
+          signWith: "personal_sign (EIP-191)",
+        },
+      },
+    ],
+  });
+  const escrowReceipt = { receipt_hash: "0xescrowreceipt", rail: "escrow", payer: "0xpayer", miner: "148002",
+    amount_uusdc: "20000", epoch_id: 18, settlement: "epoch", chain: "telegraph" };
+
+  function escrowFetch(paid: (init: RequestInit) => Response, amount?: string) {
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/api/miners")) return new Response(JSON.stringify(API_MINERS));
+      const payment = (init?.headers as Record<string, string> | undefined)?.["X-PAYMENT"];
+      return payment
+        ? paid(init!)
+        : new Response("null", { status: 402, headers: { "payment-required": b64(escrowChallenge(amount)) } });
+    });
+  }
+  const answered = (receipt: unknown = escrowReceipt) =>
+    new Response(JSON.stringify({ miner_id: "148002", miner_name: "Crossref QA", result: { answer: "ok" }, signal_hash: "0xsignal" }),
+      { status: 200, headers: receipt === null ? {} : { "x-payment-response": b64(receipt) } });
+
+  it("signs the challenge, pays from escrow and records the receipt with no transaction", async () => {
+    let sent: { scheme: string; network: string; payload: { signature: string; authorization: Record<string, string> } } | undefined;
+    const fetchImpl = escrowFetch((init) => {
+      sent = JSON.parse(atob((init.headers as Record<string, string>)["X-PAYMENT"]));
+      return answered();
+    });
+    const { client, paymentFetch } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const p = await client.buy("QUESTION_ANSWERING", "x");
+
+    expect(paymentFetch).not.toHaveBeenCalled(); // the x402 `exact` client is not used
+    expect(sent?.scheme).toBe("escrow");
+    expect(sent?.network).toBe(CHAIN);
+    expect(sent?.payload.signature).toMatch(/^0x[0-9a-f]{130}$/);
+    const auth = sent!.payload.authorization;
+    expect(auth.to).toBe(DIAMOND);
+    expect(auth.value).toBe("20000");
+    expect(auth.from).toBe(auth.from.toLowerCase());
+    expect(Number(auth.validBefore) - Number(auth.validAfter)).toBeLessThanOrEqual(120);
+    expect(p).toMatchObject({
+      rail: "escrow", epochId: 18, txHash: "", receiptHash: "0xescrowreceipt", signalHash: "0xsignal",
+      amountUsdc: 0.02, network: CHAIN, chainId: CHAIN_ID, usdcContract: USDC, status: "settled",
+    });
+    expect(client.spentUsdc).toBeCloseTo(0.02);
+  });
+
+  it("uses a fresh nonce for every call", async () => {
+    const nonces: string[] = [];
+    const fetchImpl = escrowFetch((init) => {
+      nonces.push(JSON.parse(atob((init.headers as Record<string, string>)["X-PAYMENT"])).payload.authorization.nonce);
+      return answered();
+    });
+    const { client } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    await client.buy("QUESTION_ANSWERING", "x");
+    await client.buy("QUESTION_ANSWERING", "x");
+    expect(new Set(nonces).size).toBe(2);
+  });
+
+  it("treats a refused escrow call (402, e.g. no deposit) as not charged and tries the next miner", async () => {
+    const rec: AttemptEvent[] = [];
+    const fetchImpl = escrowFetch(() =>
+      new Response(JSON.stringify({ reason: "insufficient escrow for delivery" }), { status: 402 }));
+    const { client } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x", async (e) => void rec.push(e)))
+      .rejects.toThrow(/insufficient escrow for delivery/);
+    expect(rec.filter((e) => e.state === "failed_not_charged").map((e) => e.minerId)).toEqual(["148002", "148001"]);
+    expect(client.spentUsdc).toBe(0);
+  });
+
+  it("stops for reconciliation when an answer carries no escrow receipt", async () => {
+    const rec: AttemptEvent[] = [];
+    const fetchImpl = escrowFetch(() => answered(null));
+    const { client } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x", async (e) => void rec.push(e))).rejects.toBeInstanceOf(PaymentUnknownError);
+    expect(rec.at(-1)?.state).toBe("unknown_needs_reconciliation");
+    expect(client.spentUsdc).toBeCloseTo(0.02); // the signed amount counts against the budget
+  });
+
+  it("counts the quote, not zero, when the escrow receipt's amount is null or empty", async () => {
+    for (const amount of [null, ""]) {
+      const fetchImpl = escrowFetch(() => answered({ ...escrowReceipt, amount_uusdc: amount }));
+      const { client } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+      const p = await client.buy("QUESTION_ANSWERING", "x");
+      expect(p.amountUsdc).toBeCloseTo(0.02);
+      expect(client.spentUsdc).toBeCloseTo(0.02);
+    }
+  });
+
+  it("stops for reconciliation when a paid escrow answer has no result", async () => {
+    const rec: AttemptEvent[] = [];
+    const fetchImpl = escrowFetch(() =>
+      new Response(JSON.stringify({ miner_id: "148002" }), { status: 200, headers: { "x-payment-response": b64(escrowReceipt) } }));
+    const { client } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x", async (e) => void rec.push(e))).rejects.toBeInstanceOf(PaymentUnknownError);
+    expect(rec.at(-1)).toMatchObject({ state: "unknown_needs_reconciliation", reason: expect.stringMatching(/0xescrowreceipt.*no result/) });
+    expect(client.spentUsdc).toBeCloseTo(0.02);
+  });
+
+  it("records request_sent before the signed request goes out", async () => {
+    const states: string[] = [];
+    const fetchImpl = escrowFetch(() => {
+      expect(states).toEqual(["reserved", "request_sent"]);
+      return answered();
+    });
+    const { client } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    await client.buy("QUESTION_ANSWERING", "x", async (e) => void states.push(e.state));
+  });
+
+  it("refuses an escrow quote above maxPricePerCallUsdc and signs nothing", async () => {
+    const paid = vi.fn(() => answered());
+    const fetchImpl = escrowFetch(paid, "60000");
+    const { client } = makeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(client.buy("QUESTION_ANSWERING", "x")).rejects.toBeInstanceOf(PriceGuardError);
+    expect(paid).not.toHaveBeenCalled();
+  });
+});

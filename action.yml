@@ -1,0 +1,51 @@
+name: "dependency-preflight"
+description: "Pre-deploy npm dependency assessment: malicious and vulnerable locked versions, outdated key packages, one verdict"
+branding:
+  icon: "shield"
+  color: "blue"
+inputs:
+  path:
+    description: "Directory to assess, relative to the workspace"
+    default: "."
+  fail-on:
+    description: "Lowest verdict that fails the step: blocked or review. Failed coverage always fails."
+    default: "blocked"
+  key-packages:
+    description: "Comma-separated key package patterns, listed first and checked for outdated releases"
+    default: "@solana/*,@coral-xyz/anchor"
+  case-label:
+    description: "Optional label shown at the top of the report, e.g. for a historical or controlled test case"
+  github-token:
+    description: "Token for the purchase record (contents: write; without it nothing is bought) and, on pull requests, to read the base and post the re-check comment (pull-requests: write)"
+    default: "${{ github.token }}"
+  miner-id:
+    description: "Telegraph miner asked for upgrade explanations (the only one asked)"
+    default: "7314"
+  node-url:
+    description: "Telegraph node"
+    default: "https://devnode.telegraphprotocol.com"
+  max-price-per-call-usdc:
+    description: "Highest price paid for one answer, in test USDC"
+    default: "0.05"
+  budget-cap-usdc:
+    description: "Most spent in one run, in test USDC"
+    default: "0.30"
+  max-purchases:
+    description: "Most upgrades explained in one run (bought or reused)"
+    default: "10"
+  chain-id:
+    description: "The only payment chain allowed (Ethereum Sepolia)"
+    default: "11155111"
+  usdc-address:
+    description: "The only USDC contract allowed on that chain"
+    default: "0xcc194e1a843B658526D0D5C431f670028582Ae17"
+outputs:
+  verdict:
+    description: "blocked, review or ready"
+  coverage:
+    description: "complete, partial or failed"
+  spent-usdc:
+    description: "Test USDC spent on explanations in this run"
+runs:
+  using: "node24"
+  main: "dist/index.cjs"
