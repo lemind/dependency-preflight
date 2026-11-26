@@ -9,9 +9,9 @@ happened. You are testing the README, not the code. Don't ask the authors for he
 unclear, write down what you tried and what you guessed.
 
 README to follow:
-<https://github.com/lemind/dependency-preflight/blob/002-p1-verdict-in-ci/README.md>
-(The work is on branch `002-p1-verdict-in-ci`, not yet merged to `main`.) Use only the README's **Free check** install.
-That README pins the Action at commit `98e6c7a`; that is the version under test.
+<https://github.com/lemind/dependency-preflight/blob/main/README.md>
+Use only the README's **Free check** install.
+Use the Action commit that README pins; that is the version under test.
 
 ## Rules
 
