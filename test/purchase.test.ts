@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { migrationQuestion, type CandidateSelection, type ExplanationCandidate } from "../src/explain.js";
-import { explainUpgrades, freeUpgrades, INTENT_ID, type PaidMode } from "../src/purchase.js";
+import { explainUpgrades, freeUpgrades, INTENT_ID, paidEventRefusal, type PaidMode } from "../src/purchase.js";
 import { LEASE_FILE, LEDGER_FILE, parseLedger, PurchaseRecord } from "../src/record.js";
 import { renderReport } from "../src/report.js";
 import { AskFailedError, BudgetCapError, PaymentUnknownError, type AttemptEvent, type Purchase } from "../src/telegraph.js";
@@ -200,5 +200,16 @@ describe("report section (T024)", () => {
     expect(report).toContain("The miner found no release material for this upgrade. This does not mean nothing changed");
     expect(report).toContain("The answer could not be used and is not shown as guidance: answer is for zod 3.22.0 → 4.0.0.");
     expect(report).not.toMatch(/no breaking changes/i);
+  });
+});
+
+describe("paidEventRefusal: events that never spend the wallet", () => {
+  it("refuses pull_request_target and pull requests from forks, allows the rest", () => {
+    expect(paidEventRefusal("pull_request_target", false)).toMatch(/pull_request_target/);
+    expect(paidEventRefusal("pull_request_target", true)).toMatch(/pull_request_target/);
+    expect(paidEventRefusal("pull_request", true)).toMatch(/fork/);
+    expect(paidEventRefusal("pull_request", false)).toBeUndefined();
+    expect(paidEventRefusal("push", false)).toBeUndefined();
+    expect(paidEventRefusal(undefined, false)).toBeUndefined();
   });
 });
