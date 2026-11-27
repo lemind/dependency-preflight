@@ -11,7 +11,7 @@ const controlled = async () => {
   const run = (directory: string) => assess(join(FIXTURES, directory), DEFAULT_KEY_PACKAGES, replayFetcher(loadRecording("controlled/osv.json"), registry));
   return { base: await run("controlled/compromised-web3js-1.95.6"), head: await run("controlled/clean-web3js-1.95.8") };
 };
-const emptyBase = (head: Assessment): Assessment => ({ ...head, verdict: "ready", advisories: [], outdated: [], notChecked: [], latestUnknown: [] });
+const emptyBase = (head: Assessment): Assessment => ({ ...head, verdict: "ready", advisories: [], outdated: [], notChecked: [], notAssessed: [], latestUnknown: [] });
 
 describe("renderComment (T031, R12)", () => {
   it("remediation: base and head verdicts, the malware finding resolved, and the no-build line (SC-006)", async () => {

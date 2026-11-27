@@ -353,6 +353,18 @@ const npmGraph = (content: string, manifestAt: (member: string) => Manifest | un
   const entries: Record<string, NpmEntry> = lock.packages ?? {};
   const nodes = new Map<string, GraphNode>();
   const isMemberKey = (key: string) => key === "" || !/(^|\/)node_modules\//.test(key);
+  // A link to a declared workspace is a member; a link anywhere else is a local path dependency (file:), not assessed.
+  const rootEntry = entries[""] as Manifest | undefined;
+  const patterns = workspacePatterns(rootEntry?.workspaces ? rootEntry : manifestAt(""));
+  const isWorkspace = (path: string) =>
+    path === "" ||
+    (patterns.some((pattern) => !pattern.startsWith("!") && matchesGlob(path, pattern)) &&
+      !patterns.some((pattern) => pattern.startsWith("!") && matchesGlob(path, pattern.slice(1))));
+  const localTargets = new Set(
+    Object.values(entries)
+      .filter((entry) => entry.link && entry.resolved && !isWorkspace(entry.resolved))
+      .map((entry) => entry.resolved!),
+  );
   const localNameOf = (key: string) => key.slice(key.lastIndexOf("node_modules/") + "node_modules/".length);
   const nodeId = (key: string) => (isMemberKey(key) ? `member:${key}` : `npm:${key}`);
 
@@ -363,7 +375,7 @@ const npmGraph = (content: string, manifestAt: (member: string) => Manifest | un
       const key = `${base ? `${base}/` : ""}node_modules/${name}`;
       const entry = entries[key];
       if (entry) {
-        if (entry.link && entry.resolved) return nodeId(entry.resolved);
+        if (entry.link && entry.resolved) return localTargets.has(entry.resolved) ? `npm:${key}` : nodeId(entry.resolved);
         return nodeId(key);
       }
       if (!base) return undefined;
@@ -379,7 +391,12 @@ const npmGraph = (content: string, manifestAt: (member: string) => Manifest | un
 
   const members: Member[] = [];
   for (const [key, entry] of Object.entries(entries)) {
-    if (entry.link) continue;
+    if (entry.link) {
+      if (entry.resolved && localTargets.has(entry.resolved))
+        nodes.set(nodeId(key), unassessed(localNameOf(key), `file:${entry.resolved}`, "local path dependency"));
+      continue;
+    }
+    if (localTargets.has(key)) continue;
     if (isMemberKey(key)) {
       const declared: NpmEntry = manifestAt(key) ?? entry;
       const runtimeRoots = edgesFrom(key, ["dependencies", "optionalDependencies", "peerDependencies"], declared);

@@ -89,12 +89,21 @@ checked"; a runtime one makes the verdict at least review; any makes coverage pa
 only; `minor`/`major` = outdated; only `key` with `major` makes the verdict review (FR-004b). Paid explanation
 candidates (P2): `runtime` and `minor`/`major`.
 
-### `NotChecked`
+### `NotChecked` and `NotAssessed` [built, T034]
 
-`{ name, version?, lockfile, runtime, unreachable, reason }`: OSV lookups that didn't complete, and not-assessed
-dependencies. **Planned (T034)**: split into `notAssessed` (outside the supported scope or identity not verifiable:
-Git, local path, URL, unresolved workspace reference, unsupported lockfile) and `notChecked` (a lookup that should
-have completed but failed: OSV or registry timeout or outage), each with its own report section.
+- `NotChecked`: `{ name, version, lockfile, runtime, unreachable, reason }`, a locked version whose OSV lookup should
+  have completed but didn't (timeout, outage). A rerun may complete it. Registry failures are kept as
+  `latestUnknown` and reported with them.
+- `NotAssessed`: `{ name, source, lockfile, runtime, unreachable, reason }`, a dependency outside the supported
+  scope or whose identity can't be verified (Git, local path, URL, unresolved workspace reference). A rerun won't
+  change it. Unsupported or unparseable lockfiles, other ecosystems' files and manifests without a lockfile are
+  reported in the same section, from `Discovery`.
+
+Each has its own total and report section, one line per item; a package whose advisory and latest-release lookups
+both failed is one line. A runtime `NotChecked` or `NotAssessed` entry makes the verdict at least review (FR-017).
+A key package in `latestUnknown` also makes it review: it can't be called current. Unsupported files from
+`Discovery` and other `latestUnknown` entries only make coverage partial. On a pull request, a base
+finding whose package is `NotAssessed` on the head is not verified, never resolved (FR-013).
 
 ## Report → `Assessment` [built]
 
@@ -107,6 +116,8 @@ have completed but failed: OSV or registry timeout or outage), each with its own
 | `advisories` | `AdvisoryFinding[]`, ranked |
 | `outdated` | `OutdatedFinding[]`, key packages first |
 | `notChecked` | `NotChecked[]` |
+| `notAssessed` | `NotAssessed[]` |
+| `latestUnknown` | `string[]`, direct dependencies whose latest release could not be looked up |
 | `discovery` | `Discovery` |
 | `lockedVersionCount` | `number` (unique name@version) |
 

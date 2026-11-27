@@ -8,9 +8,10 @@ It reads your lockfiles and manifests (nothing is installed, built or run) and:
 - flags **compromised** (malware) and **vulnerable** locked versions, using public advisory data from
   [OSV](https://osv.dev);
 - flags outdated **key packages** (`@solana/*` and `@coral-xyz/anchor` by default; you can change the list);
-- with a testnet wallet, **buys a sourced "what changed" answer** for each upgrade it flags, from a Telegraph miner. The
-  answer lists breaking changes and deprecations, what to change, and quotes and links from the release notes. You
-  get a receipt for each purchase, and an answer is bought only once;
+- with a testnet wallet, **buys a "what changed" answer** from a Telegraph miner for outdated direct runtime
+  dependencies (key packages first, up to `max-purchases`). The answer lists breaking changes and deprecations, each
+  with a quote and a link from the release notes, and often what to change. You get a receipt for each purchase, and
+  an answer is bought only once;
 - gives a **verdict** (**blocked**, **review** or **ready**) and says how much it could check (**coverage**:
   complete, partial or failed). On a pull request, it **re-checks** against the base branch and posts one comment
   that says what the change resolved, what is still open and what is new.
@@ -19,12 +20,12 @@ It reads your lockfiles and manifests (nothing is installed, built or run) and:
 dependencies passed these checks. It doesn't mean the app is safe to deploy.
 
 Built for the Telegraph Hackathon Season II (Apps & Agents, mission 10, Model Economy). **Testnet only:** payments
-are in Ethereum Sepolia test USDC.
+are in Ethereum Sepolia test USDC, and the Action refuses any chain but Ethereum or Base Sepolia.
 
 ## Three scenarios, run on GitHub-hosted runners
 
-All three are test cases we set up ourselves, not findings in someone's live project. Commits, receipts and full
-reports: [docs/results](docs/results/README.md).
+All three are test cases we set up ourselves, not findings in someone's live project. Commits, full reports and, for
+scenario 2, the purchase receipts: [docs/results](docs/results/README.md).
 
 ### 1. Compromised dependency, then the fix (controlled test case)
 
@@ -50,8 +51,8 @@ around a past incident: the December 2024 compromise of `@solana/web3.js`.
   > **Still open**
   > - 🔑 `@solana/web3.js` `1.95.6` → `1.95.8` in `.`: key package a major release behind
 
-  The malware is resolved. The verdict is now **review**, not **ready**, because 1.x is a major release behind the
-  latest `@solana/web3.js`.
+  The malware is resolved. The verdict is now **review**, not **ready**, because the latest `@solana/web3.js` is a
+  newer major release (3.x).
 
 ### 2. Breaking upgrades, explained by a paid miner (related-party test)
 
@@ -69,7 +70,8 @@ branch `preflight-demo`, path `sdk`). Drift's own workflows are removed on that 
   | `@coral-xyz/anchor` 0.30.1 → 0.32.1 | 37 |
   | `@solana/web3.js` 1.98.0 → 3.2.1 | 16 |
 
-  Each change says what changed, at which version and what to do. It quotes the release notes and links to them.
+  Each change says what changed and at which version, with a quote and a link to the release notes; some also say
+  what to do. The quotes come from the miner and are not checked against the notes.
 - [Rerunning the same commit](https://github.com/lemind/protocol-v2/actions/runs/45584252938) spent **0.00**: the
   answers are reused from the purchase record on the fork's `preflight` branch. The receipts, with their receipt and
   signal hashes, are in `ledger.jsonl` on that branch.
@@ -79,7 +81,7 @@ branch `preflight-demo`, path `sdk`). Drift's own workflows are removed on that 
 Repository: [lemind/preflight-demo-clean](https://github.com/lemind/preflight-demo-clean). It depends only on
 `@solana/kit` 8.6.0, the latest release on 25 Nov 2026. Its lockfile holds 47 locked versions.
 
-- [Run](https://github.com/lemind/preflight-demo-clean/actions/runs/45594603907):
+- [Run](https://github.com/lemind/preflight-demo-clean/actions/runs/45811076777):
   `Verdict: ready, coverage: complete, spent: 0.00 test USDC`.
 - "Ready" can change: a new advisory or a new major release of a key package turns it to blocked or review.
 
@@ -110,7 +112,7 @@ jobs:
         with:
           persist-credentials: false
       # Reads lockfiles and manifests only; nothing is installed, built or run.
-      - uses: lemind/dependency-preflight@98e6c7acf637efbad749eeef65e975e7231ab1f2
+      - uses: lemind/dependency-preflight@2b25fabb525192e98ee71285f43c785258b09e8f
 ```
 
 The report is in the run's summary. The step fails on **blocked**; set `fail-on: review` to fail on review too. A
@@ -138,13 +140,19 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: lemind/dependency-preflight@98e6c7acf637efbad749eeef65e975e7231ab1f2
+      - uses: lemind/dependency-preflight@2b25fabb525192e98ee71285f43c785258b09e8f
         env:
           TELEGRAPH_EVM_PRIVATE_KEY: ${{ secrets.TELEGRAPH_EVM_PRIVATE_KEY }}
 ```
 
 Without the secret, or without write access, the Action runs the free check and says why it skipped paid
-explanations. Pull requests from forks never get the secret.
+explanations. It never buys on `pull_request_target` or for a pull request from a fork, even when the secret is
+available.
+
+The paid path ran on the commit pinned here on 26 Nov
+([run](https://github.com/lemind/protocol-v2/actions/runs/45809367818)): one new answer bought for 0.02 test USDC,
+three reused. The miner answered "not found" for that upgrade, `@ellipsis-labs/phoenix-sdk` 1.4.5 → 2.0.3: it had no
+release notes for it.
 
 ### Inputs and outputs
 
@@ -159,7 +167,7 @@ explanations. Pull requests from forks never get the secret.
 | `max-price-per-call-usdc` | `0.05` | highest price for one answer |
 | `budget-cap-usdc` | `0.30` | most spent in one run |
 | `max-purchases` | `10` | most upgrades explained in one run |
-| `node-url`, `chain-id`, `usdc-address` | Telegraph devnode, Sepolia, test USDC | |
+| `node-url`, `chain-id`, `usdc-address` | Telegraph devnode, Sepolia, test USDC | `chain-id` must be 11155111 or 84532 |
 
 Outputs: `verdict`, `coverage`, `spent-usdc`. The full contract:
 [contracts/action.md](specs/001-dependency-preflight/contracts/action.md).
@@ -170,36 +178,43 @@ Outputs: `verdict`, `coverage`, `spent-usdc`. The full contract:
 - **An explanation costs what the miner quotes.** Miner 7314 quoted 0.02 test USDC on 25 Nov 2026. A quote above
   `max-price-per-call-usdc` is refused, and a run stops at `budget-cap-usdc`.
 - Each upgrade (package, from, to) is bought once per repository; later runs reuse the answer.
+- What is bought: outdated direct runtime dependencies with a minor or major gap, key packages first, up to
+  `max-purchases` (default 10). This can include packages that don't change the verdict.
 
 ## Limits
 
 - npm ecosystem only: `package-lock.json` and `npm-shrinkwrap.json` (v2 and v3), `yarn.lock` (v1) and
-  `pnpm-lock.yaml` (v6 and v9). Yarn Berry lockfiles, other ecosystems' dependency files (Cargo, pip and others) and
-  manifests without a lockfile are listed as not assessed.
+  `pnpm-lock.yaml` (v6 and v9). Yarn Berry and Bun lockfiles, other ecosystems' lockfiles (`Cargo.lock`, `go.sum`,
+  Python and others) and manifests without a lockfile are listed as not assessed.
+- A repository with none of the supported lockfiles gets coverage **failed**, and the step fails.
 - Dependencies from Git, a local path or a URL can't be looked up, so they are listed as not assessed and coverage is
-  partial.
+  partial. As runtime dependencies, they make the verdict review.
+- Integrity hashes in lockfiles are not checked: the Action matches locked versions against advisories, it doesn't
+  verify the downloaded packages.
 - The verdict is only as complete as OSV. A version with no known advisory isn't proven safe.
 - The miner's answers are drawn from release notes, and their quality depends on those notes. Each change carries the
   quote it rests on; check it before you act on it.
 - The base of a pull request is read through the GitHub API. A base tree too large to list in one request isn't
-  compared; the comment says so.
+  compared; the comment says so. For a pull request from a fork, the re-check is in the run summary only, with no
+  comment.
 
 ## Disclosure
 
 - **Related party:** miner 7314 is run by the [Telegraph PR Agent](https://github.com/borodedamie/telegraph-pr-agent)
-  team, whose package-release miner this project reuses. Every report with purchases says so.
+  team, whose package-release miner this project reuses. Every run summary with purchases says so.
 - **Testnet only:** all payments so far were Sepolia test USDC, with no real value.
 
 ## Status
 
-What works today (25 Nov 2026), each step run on GitHub-hosted runners:
+What works today (26 Nov 2026), each step run on GitHub-hosted runners with the pinned commit:
 
 - **P1** (free check: lockfiles, OSV advisories, verdict and coverage, job summary, fail on blocked);
 - **P2** (paid explanations, purchase record, receipts, reuse);
 - **P3** (pull request re-check and comment).
 
-Not done yet: an outside reproduction from this README, and separating "not assessed" from "not checked" in the
-report.
+The free check from this README was reproduced on 26 Nov by an AI agent on a separate GitHub account
+([pull request](https://github.com/lemind-bt/preflight-repro/pull/1)): ready on `main`, blocked after adding
+`nanoid` 3.3.4.
 
 Context, plan and tasks: [PROJECT.md](PROJECT.md), [plan](specs/001-dependency-preflight/plan.md),
 [tasks](specs/001-dependency-preflight/tasks.md). Spec:

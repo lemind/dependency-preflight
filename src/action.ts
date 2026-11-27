@@ -7,7 +7,7 @@ import { fetchBaseFiles } from "./base.js";
 import { renderComment, upsertComment } from "./comment.js";
 import { compare, type Comparison } from "./compare.js";
 import { selectCandidates, type CandidateSelection } from "./explain.js";
-import { explainUpgrades, freeUpgrades, type UpgradeResult } from "./purchase.js";
+import { explainUpgrades, freeUpgrades, paidEventRefusal, type UpgradeResult } from "./purchase.js";
 import { githubApi, PurchaseRecord } from "./record.js";
 import { renderReport } from "./report.js";
 import { IntelligenceClient } from "./telegraph.js";
@@ -32,10 +32,12 @@ const numberInput = (name: string, fallback: string, check: (value: number) => b
  * P2: explains the selected upgrades when a wallet, a writable record and the lease are all available (FR-009b);
  * otherwise free mode with the reason. The wallet key is masked and never logged or put in a message.
  */
-const upgrades = async (selection: CandidateSelection): Promise<UpgradeResult> => {
+const upgrades = async (selection: CandidateSelection, pr: PullRequest | undefined): Promise<UpgradeResult> => {
   const key = process.env.TELEGRAPH_EVM_PRIVATE_KEY?.trim();
-  if (!key) return freeUpgrades(selection, "no wallet configured (TELEGRAPH_EVM_PRIVATE_KEY is not set; pull requests from forks never get it)");
+  if (!key) return freeUpgrades(selection, "no wallet configured (TELEGRAPH_EVM_PRIVATE_KEY is not set)");
   core.setSecret(key);
+  const refusal = paidEventRefusal(process.env.GITHUB_EVENT_NAME, pr?.fromFork ?? false);
+  if (refusal) return freeUpgrades(selection, refusal);
   if (!/^0x[0-9a-fA-F]{64}$/.test(key)) return freeUpgrades(selection, "TELEGRAPH_EVM_PRIVATE_KEY is not a 0x-prefixed 32-byte hex key");
   if (!selection.candidates.length) return freeUpgrades(selection, "no upgrade to explain");
   const token = core.getInput("github-token");
@@ -131,7 +133,8 @@ const run = async () => {
 
   const assessment = await assess(root, keyPackages, fetch, path);
   const maxPurchases = numberInput("max-purchases", "10", (value) => Number.isInteger(value) && value >= 0, "a whole number of 0 or more");
-  const upgradeResult = await upgrades(selectCandidates(assessment.outdated, maxPurchases));
+  const pr = pullRequest();
+  const upgradeResult = await upgrades(selectCandidates(assessment.outdated, maxPurchases), pr);
   const report = renderReport(assessment, {
     path,
     repository: process.env.GITHUB_REPOSITORY,
@@ -142,7 +145,6 @@ const run = async () => {
     upgrades: upgradeResult,
   });
 
-  const pr = pullRequest();
   const summary = pr ? `${await recheck(pr, assessment, keyPackages, path)}\n---\n\n${report}` : report;
   if (process.env.GITHUB_STEP_SUMMARY) await core.summary.addRaw(summary).write();
   else process.stdout.write(summary);
