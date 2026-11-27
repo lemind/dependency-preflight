@@ -22,6 +22,9 @@ dependencies passed these checks. It doesn't mean the app is safe to deploy.
 Built for the Telegraph Hackathon Season II (Apps & Agents, mission 10, Model Economy). **Testnet only:** payments
 are in Ethereum Sepolia test USDC, and the Action refuses any chain but Ethereum or Base Sepolia.
 
+**Walkthrough video (3 min):** [youtu.be/NGhZ6B5em8k](https://youtu.be/NGhZ6B5em8k). Showcase post and commercial
+summary: [docs/SHOWCASE.md](docs/SHOWCASE.md).
+
 ## Three scenarios, run on GitHub-hosted runners
 
 All three are test cases we set up ourselves, not findings in someone's live project. Commits, full reports and, for
