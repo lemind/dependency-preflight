@@ -108,7 +108,7 @@ the malware finding resolved and the verdict moving from blocked to review (web3
 - [x] T040 `README.md`: what it is, the three scenarios with real outputs, install (workflow file plus optional secret), costs, limits, disclosure (related-party miner, testnet)
 - [x] T041 Run all scenarios end to end; save the reports under `docs/results/` with date, repository and commit
 - [ ] T042 Reproduction by someone outside the team following only the README (SC-005); start as soon as T047 passes; a self-contained prompt for the Grok browser agent can help
-- [ ] T043 ⚠ Walkthrough video (2–5 min): problem, run, verdict, explanation with receipt, fix, re-check
+- [x] T043 ⚠ Walkthrough video (2–5 min): problem, run, verdict, explanation with receipt, fix, re-check **Done 27 Nov**: [youtu.be/NGhZ6B5em8k](https://youtu.be/NGhZ6B5em8k), 3:12, on the commit pinned in the README (`2b25fab`)
 - [ ] T044 ⚠ Post in Telegraph's Solana showcase thread: app, repository, results, video
 - [ ] T045 ⚠ Submit as a distinct Apps & Agents entry, mission 10, with the five-question commercial summary
 
